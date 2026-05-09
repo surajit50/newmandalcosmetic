@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -34,11 +34,9 @@ import {
   CreditCard,
   Printer,
 } from "lucide-react";
-import { ThermalReceipt } from "@/components/pos/thermal-receipt";
-import ReactDOMServer from "react-dom/server";
 import { toast } from "sonner";
-import jsPDF from "jspdf";
-import html2canvas from "html2canvas";
+import { printReceipt } from "@/lib/print-receipt";
+import { generatePDF } from "@/lib/generate-pdf";
 
 interface Sale {
   id: string;
@@ -96,6 +94,7 @@ export default function ReportsPage() {
     data: Purchase[];
   } | null>(null);
   const [shopSettings, setShopSettings] = useState<any>(null);
+  const printFrameRef = useRef<HTMLIFrameElement>(null);
 
   // Set default dates (current month)
   useEffect(() => {
@@ -208,148 +207,22 @@ export default function ReportsPage() {
     a.click();
   };
 
+  // ---------- Print & PDF (using shared lib) ----------
   const handlePrint = (sale: Sale) => {
     if (!shopSettings) return;
-
-    const printWindow = window.open("", "_blank");
-    if (!printWindow) return;
-
-    const receiptHtml = ReactDOMServer.renderToString(
-      <ThermalReceipt
-        shopName={shopSettings.shopName}
-        address={shopSettings.address}
-        phone={shopSettings.phone}
-        gstin={shopSettings.gstin}
-        invoiceNumber={sale.invoiceNumber}
-        date={new Date(sale.createdAt)}
-        customerName={sale.customerName}
-        items={sale.items}
-        subtotal={sale.subtotal}
-        totalGst={sale.totalGst}
-        totalDiscount={sale.totalDiscount}
-        grandTotal={sale.grandTotal}
-        paidAmount={sale.paidAmount}
-        dueAmount={sale.dueAmount}
-      />,
-    );
-
-    printWindow.document.write(`
-      <html>
-        <head>
-          <title>Reprint Invoice - ${sale.invoiceNumber}</title>
-          <style>
-            @media print {
-              @page { margin: 0; size: 80mm auto; }
-              body { margin: 0; }
-            }
-            body { font-family: monospace; }
-          </style>
-        </head>
-        <body onload="window.print(); window.close();">
-          ${receiptHtml}
-        </body>
-      </html>
-    `);
-    printWindow.document.close();
+    printReceipt({
+      completedSale: sale,
+      shopSettings,
+      printFrameRef,
+    });
   };
 
-  const handleSavePDF = async (sale: Sale) => {
+  const handleSavePDF = (sale: Sale) => {
     if (!shopSettings) return;
-
-    const toastId = toast.loading("Generating PDF...");
-
-    try {
-      const receiptElement = document.createElement("div");
-      receiptElement.style.position = "absolute";
-      receiptElement.style.left = "-9999px";
-      receiptElement.style.top = "0";
-      receiptElement.style.width = "80mm";
-      receiptElement.style.background = "white";
-      document.body.appendChild(receiptElement);
-
-      const receiptHtml = ReactDOMServer.renderToString(
-        <ThermalReceipt
-          shopName={shopSettings.shopName}
-          address={shopSettings.address}
-          phone={shopSettings.phone}
-          gstin={shopSettings.gstin}
-          invoiceNumber={sale.invoiceNumber}
-          date={new Date(sale.createdAt)}
-          customerName={sale.customerName}
-          items={sale.items}
-          subtotal={sale.subtotal}
-          totalGst={sale.totalGst}
-          totalDiscount={sale.totalDiscount}
-          grandTotal={sale.grandTotal}
-          paidAmount={sale.paidAmount}
-          dueAmount={sale.dueAmount}
-        />,
-      );
-
-      receiptElement.innerHTML = `
-        <style>
-          .receipt-container { width: 80mm; padding: 10px; font-family: monospace; background: white; color: black; }
-          .text-center { text-align: center; }
-          .flex { display: flex; }
-          .justify-between { justify-content: space-between; }
-          .font-bold { font-weight: bold; }
-          .border-t { border-top: 1px dashed black; }
-          .border-b { border-bottom: 1px dashed black; }
-          .border-double { border-top: 3px double black; }
-          .my-1 { margin-top: 4px; margin-bottom: 4px; }
-          .my-2 { margin-top: 8px; margin-bottom: 8px; }
-          .py-1 { padding-top: 4px; padding-bottom: 4px; }
-          .mt-2 { margin-top: 8px; }
-          .mt-4 { margin-top: 16px; }
-          .w-full { width: 100%; }
-          .text-left { text-align: left; }
-          .text-right { text-align: right; }
-          .uppercase { text-transform: uppercase; }
-          table { width: 100%; border-collapse: collapse; }
-          th, td { font-size: 11px; }
-          h1 { margin: 0; font-size: 14px; }
-          p { margin: 2px 0; }
-        </style>
-        <div class="receipt-container">
-          ${receiptHtml}
-        </div>
-      `;
-
-      // Wait a bit for styles to apply
-      await new Promise((resolve) => setTimeout(resolve, 100));
-
-      const canvas = await html2canvas(receiptElement, {
-        scale: 2,
-        useCORS: true,
-        logging: false,
-        backgroundColor: "#ffffff",
-        windowWidth: 800, // Fixed width for better rendering
-      });
-
-      const imgData = canvas.toDataURL("image/png");
-      const pdf = new jsPDF({
-        unit: "mm",
-        format: [80, (canvas.height * 80) / canvas.width],
-      });
-
-      pdf.addImage(
-        imgData,
-        "PNG",
-        0,
-        0,
-        80,
-        (canvas.height * 80) / canvas.width,
-        undefined,
-        "FAST",
-      );
-      pdf.save(`Invoice-${sale.invoiceNumber}.pdf`);
-
-      document.body.removeChild(receiptElement);
-      toast.success("PDF saved successfully", { id: toastId });
-    } catch (error) {
-      console.error("PDF Error:", error);
-      toast.error("Failed to save PDF", { id: toastId });
-    }
+    generatePDF({
+      completedSale: sale,
+      shopSettings,
+    });
   };
 
   return (
@@ -751,6 +624,9 @@ export default function ReportsPage() {
           </Card>
         </>
       )}
+
+      {/* Hidden iframe for printing invoices */}
+      <iframe ref={printFrameRef} className="hidden" title="Print Frame" />
     </div>
   );
 }
