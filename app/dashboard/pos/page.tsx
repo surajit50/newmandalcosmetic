@@ -401,38 +401,48 @@ export default function POSPage() {
     const toastId = toast.loading("Generating PDF...");
 
     try {
+      // ---------- Create PDF document ----------
       const doc = new jsPDF({
         unit: "mm",
-        format: [80, 297], // 80mm width, auto trimmed later
+        format: [80, 200], // 80mm width, generous height (will be trimmed later)
       });
+
+      // *** Quick validation: draw a colored rectangle and a test word ***
+      doc.setFillColor(220, 220, 220);
+      doc.rect(5, 5, 70, 10, "F");
+      doc.setTextColor(0);
+      doc.setFont("courier", "bold");
+      doc.setFontSize(12);
+      doc.text("TEST - PDF OK", 40, 10, { align: "center" });
+      // *** Remove the block above after confirming PDF is generated ***
 
       const pageWidth = 80;
       const margin = 4;
-      let y = 8;
+      let y = 20; // start below the test rectangle
 
-      // --- Helper functions (all use getTextWidth for precise alignment) ---
+      // ---------- Helper functions ----------
       const centerText = (text: string, size = 12, style = "normal") => {
-        doc.setFont("Courier", style);
+        doc.setFont("courier", style);
         doc.setFontSize(size);
         const textWidth = doc.getTextWidth(text);
         doc.text(text, (pageWidth - textWidth) / 2, y);
-        y += size * 0.4;
+        y += size * 0.45;
       };
 
       const leftText = (text: string, size = 10, style = "normal") => {
-        doc.setFont("Courier", style);
+        doc.setFont("courier", style);
         doc.setFontSize(size);
         doc.text(text, margin, y);
-        y += size * 0.4;
+        y += size * 0.45;
       };
 
       const twoColumn = (left: string, right: string, size = 10) => {
-        doc.setFont("Courier", "normal");
+        doc.setFont("courier", "normal");
         doc.setFontSize(size);
         doc.text(left, margin, y);
         const rw = doc.getTextWidth(right);
         doc.text(right, pageWidth - margin - rw, y);
-        y += size * 0.4;
+        y += size * 0.45;
       };
 
       const dashedLine = () => {
@@ -450,7 +460,7 @@ export default function POSPage() {
         y += 2;
       };
 
-      // --- Shop header ---
+      // ---------- Shop Header ----------
       const shopName = shopSettings.shopName || "Shop Name";
       centerText(shopName.toUpperCase(), 12, "bold");
       if (shopSettings.address) {
@@ -480,47 +490,45 @@ export default function POSPage() {
       leftText(custDisplay, 8);
       dashedLine();
 
-      // Table header (right‑aligned Rate & Amt)
-      doc.setFont("Courier", "bold");
+      // ---------- Table Header ----------
+      doc.setFont("courier", "bold");
       doc.setFontSize(8);
 
-      const col1 = margin; // Item
-      const col2 = margin + 36; // Qty (fixed position)
-      const rateText = "Rate";
-      const amtText = "Amt";
-      const col3 = pageWidth - margin - doc.getTextWidth(rateText); // Rate right-aligned
-      const col4 = pageWidth - margin - doc.getTextWidth(amtText); // Amt right-aligned
+      const col1 = margin;
+      const col2 = margin + 36;
+      const rateLabel = "Rate";
+      const amtLabel = "Amt";
+      const rateLabelWidth = doc.getTextWidth(rateLabel);
+      const amtLabelWidth = doc.getTextWidth(amtLabel);
 
       doc.text("Item", col1, y);
       doc.text("Qty", col2, y);
-      doc.text(rateText, col3, y);
-      doc.text(amtText, col4, y);
+      doc.text(rateLabel, pageWidth - margin - rateLabelWidth, y);
+      doc.text(amtLabel, pageWidth - margin - amtLabelWidth, y);
       y += 3.5;
 
-      // --- Items (right‑aligned numbers) ---
-      doc.setFont("Courier", "normal");
-      completedSale.items.forEach((item: any) => {
+      // ---------- Items ----------
+      doc.setFont("courier", "normal");
+      (completedSale.items || []).forEach((item: any) => {
         const name =
-          item.productName && item.productName.length > 20
-            ? item.productName.substring(0, 18) + ".."
+          (item.productName || "Unknown").length > 20
+            ? (item.productName || "Unknown").substring(0, 18) + ".."
             : item.productName || "Unknown";
 
         doc.text(name, col1, y);
         doc.text(`${item.quantity ?? 0}`, col2, y);
 
-        // Right‑align rate and total using getTextWidth
+        // Right‑align numbers using getTextWidth
         const rateStr = `${(item.sellingPrice ?? 0).toFixed(0)}`;
         const amtStr = `${(item.total ?? 0).toFixed(0)}`;
-        const rateX = pageWidth - margin - doc.getTextWidth(rateStr);
-        const amtX = pageWidth - margin - doc.getTextWidth(amtStr);
-        doc.text(rateStr, rateX, y);
-        doc.text(amtStr, amtX, y);
+        doc.text(rateStr, pageWidth - margin - doc.getTextWidth(rateStr), y);
+        doc.text(amtStr, pageWidth - margin - doc.getTextWidth(amtStr), y);
         y += 3.5;
       });
 
       dashedLine();
 
-      // --- Totals ---
+      // ---------- Totals ----------
       twoColumn("Subtotal:", (completedSale.subtotal ?? 0).toFixed(0), 9);
       twoColumn("GST:", (completedSale.totalGst ?? 0).toFixed(0), 9);
       if ((completedSale.totalDiscount ?? 0) > 0) {
@@ -534,7 +542,7 @@ export default function POSPage() {
       doc.line(margin, y, pageWidth - margin, y);
       y += 3;
 
-      doc.setFont("Courier", "bold");
+      doc.setFont("courier", "bold");
       doc.setFontSize(11);
       const totalStr = `TOTAL: ${(completedSale.grandTotal ?? 0).toFixed(0)}`;
       doc.text(totalStr, margin, y);
@@ -542,7 +550,7 @@ export default function POSPage() {
       y += 6;
 
       // Payment details
-      doc.setFont("Courier", "normal");
+      doc.setFont("courier", "normal");
       doc.setFontSize(8);
       twoColumn("Paid:", (completedSale.paidAmount ?? 0).toFixed(0), 8);
       twoColumn("Due:", (completedSale.dueAmount ?? 0).toFixed(0), 8);
@@ -553,18 +561,17 @@ export default function POSPage() {
       centerText("Thank you for your purchase!", 8);
       centerText("Visit again", 8);
 
-      // Trim page height
-      const pageHeight = y + 10;
-      doc.internal.pageSize.height = pageHeight;
+      // ---------- Trim page height ----------
+      const finalHeight = y + 10;
+      doc.internal.pageSize.height = finalHeight;
 
+      // ---------- Save ----------
       doc.save(`Invoice-${completedSale.invoiceNumber}.pdf`);
 
       toast.success("PDF saved successfully", { id: toastId });
     } catch (error) {
-      console.error("PDF Error:", error);
-      toast.error("Failed to save PDF – check console for details", {
-        id: toastId,
-      });
+      console.error("PDF generation error:", error);
+      toast.error("Failed to save PDF – see console (F12)", { id: toastId });
     }
   };
 
