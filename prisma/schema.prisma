@@ -1,0 +1,233 @@
+datasource db {
+  provider = "mongodb"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum UserRole {
+  ADMIN
+  MANAGER
+  CASHIER
+  STAFF
+}
+
+model User {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  name      String
+  email     String   @unique
+  password  String
+  role      UserRole @default(CASHIER)
+  phone     String?
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Category {
+  id          String    @id @default(auto()) @map("_id") @db.ObjectId
+  name        String    @unique
+  description String?
+  products    Product[]
+  isActive    Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
+
+model Brand {
+  id          String    @id @default(auto()) @map("_id") @db.ObjectId
+  name        String    @unique
+  description String?
+  products    Product[]
+  isActive    Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
+
+model Product {
+  id             String    @id @default(auto()) @map("_id") @db.ObjectId
+  name           String
+  barcode        String?   @unique
+  categoryId     String    @db.ObjectId
+  category       Category  @relation(fields: [categoryId], references: [id])
+  brandId        String?   @db.ObjectId
+  brand          Brand?    @relation(fields: [brandId], references: [id])
+  unit           String    @default("pcs")
+  gstRate        Float     @default(0)
+  hsnCode        String?
+  purchasePrice  Float     @default(0)
+  sellingPrice   Float     @default(0)
+  mrp            Float     @default(0)
+  wholesalePrice Float     @default(0)
+  currentStock   Float     @default(0)
+  minStock       Float     @default(5)
+  expiryDate     DateTime?
+  batchNumber    String?
+  image          String?
+  isActive       Boolean   @default(true)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  saleItems         SaleItem[]
+  purchaseItems     PurchaseItem[]
+  stockTransactions StockTransaction[]
+}
+
+model Customer {
+  id             String   @id @default(auto()) @map("_id") @db.ObjectId
+  name           String
+  phone          String   @unique
+  email          String?
+  address        String?
+  gstin          String?
+  totalPurchases Float    @default(0)
+  totalDue       Float    @default(0)
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  sales          Sale[]
+}
+
+model Supplier {
+  id             String     @id @default(auto()) @map("_id") @db.ObjectId
+  name           String
+  phone          String     @unique
+  email          String?
+  address        String?
+  gstin          String?
+  totalPurchases Float      @default(0)
+  totalDue       Float      @default(0)
+  isActive       Boolean    @default(true)
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+  purchases      Purchase[]
+}
+
+model Purchase {
+  id            String         @id @default(auto()) @map("_id") @db.ObjectId
+  invoiceNumber String         @unique
+  supplierId    String         @db.ObjectId
+  supplier      Supplier       @relation(fields: [supplierId], references: [id])
+  items         PurchaseItem[]
+  subtotal      Float
+  totalGst      Float
+  grandTotal    Float
+  paidAmount    Float
+  dueAmount     Float
+  paymentStatus String // PAID, PARTIAL, DUE
+  paymentMode   String? // CASH, UPI, CARD, BANK
+  notes         String?
+  createdBy     String         @db.ObjectId
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+}
+
+model PurchaseItem {
+  id            String   @id @default(auto()) @map("_id") @db.ObjectId
+  purchaseId    String   @db.ObjectId
+  purchase      Purchase @relation(fields: [purchaseId], references: [id])
+  productId     String   @db.ObjectId
+  product       Product  @relation(fields: [productId], references: [id])
+  productName   String
+  quantity      Float
+  purchasePrice Float
+  gstRate       Float
+  gstAmount     Float
+  total         Float
+}
+
+model Sale {
+  id            String     @id @default(auto()) @map("_id") @db.ObjectId
+  invoiceNumber String     @unique
+  customerId    String?    @db.ObjectId
+  customer      Customer?  @relation(fields: [customerId], references: [id])
+  customerName  String
+  customerPhone String?
+  items         SaleItem[]
+  subtotal      Float
+  totalDiscount Float
+  totalGst      Float
+  grandTotal    Float
+  paidAmount    Float
+  dueAmount     Float
+  paymentStatus String // PAID, PARTIAL, DUE
+  paymentMode   String // CASH, UPI, CARD, BANK
+  notes         String?
+  createdBy     String     @db.ObjectId
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+}
+
+model SaleItem {
+  id           String  @id @default(auto()) @map("_id") @db.ObjectId
+  saleId       String  @db.ObjectId
+  sale         Sale    @relation(fields: [saleId], references: [id])
+  productId    String  @db.ObjectId
+  product      Product @relation(fields: [productId], references: [id])
+  productName  String
+  quantity     Float
+  mrp          Float
+  sellingPrice Float
+  discount     Float
+  gstRate      Float
+  gstAmount    Float
+  total        Float
+}
+
+model StockTransaction {
+  id            String   @id @default(auto()) @map("_id") @db.ObjectId
+  productId     String   @db.ObjectId
+  product       Product  @relation(fields: [productId], references: [id])
+  productName   String
+  type          String // IN, OUT, ADJUSTMENT, DAMAGE, RETURN
+  quantity      Float
+  previousStock Float
+  newStock      Float
+  referenceType String? // PURCHASE, SALE, ADJUSTMENT, RETURN, DAMAGE
+  referenceId   String?  @db.ObjectId
+  notes         String?
+  createdBy     String   @db.ObjectId
+  createdAt     DateTime @default(now())
+}
+
+model Expense {
+  id          String   @id @default(auto()) @map("_id") @db.ObjectId
+  category    String // Salary, Rent, Electricity, etc.
+  amount      Float
+  date        DateTime @default(now())
+  description String?
+  paymentMode String // CASH, UPI, CARD, BANK
+  createdBy   String   @db.ObjectId
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model Cashbook {
+  id              String   @id @default(auto()) @map("_id") @db.ObjectId
+  type            String // INCOME, EXPENSE
+  category        String?
+  amount          Float
+  previousBalance Float
+  newBalance      Float
+  paymentMode     String // CASH, UPI, CARD, BANK
+  referenceType   String? // SALE, PURCHASE, EXPENSE, CUSTOMER_DUE, SUPPLIER_DUE
+  referenceId     String?  @db.ObjectId
+  description     String?
+  date            DateTime @default(now())
+  createdBy       String   @db.ObjectId
+  createdAt       DateTime @default(now())
+}
+
+model Settings {
+  id                   String   @id @default(auto()) @map("_id") @db.ObjectId
+  shopName             String   @default("New Mandal Cosmetic")
+  address              String?
+  phone                String?
+  email                String?
+  gstin                String?
+  invoicePrefix        String   @default("INV")
+  currentInvoiceNumber Int      @default(1001)
+  updatedAt            DateTime @updatedAt
+}
