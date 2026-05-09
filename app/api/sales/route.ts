@@ -122,17 +122,26 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Map payment mode to enum
-    const paymentModeMap: { [key: string]: 'CASH' | 'UPI' | 'CARD' | 'BANK' } = {
-      'CASH': 'CASH',
-      'UPI': 'UPI',
-      'CARD': 'CARD',
-      'BANK': 'BANK',
+    // PAYMENT MODE FIX
+    const paymentModeMap: {
+      [key: string]: 'CASH' | 'UPI' | 'CARD' | 'BANK'
+    } = {
+      CASH: 'CASH',
+      UPI: 'UPI',
+      CARD: 'CARD',
+      BANK: 'BANK',
     }
-    const paymentMode = paymentModeMap[body.paymentMode] || 'CASH'
 
-    // Determine payment status
-    const getPaymentStatus = (dueAmount: number, paidAmount: number) => {
+    const paymentMode =
+      paymentModeMap[
+        String(body.paymentMode || 'CASH').toUpperCase()
+      ] || 'CASH'
+
+    // PAYMENT STATUS
+    const getPaymentStatus = (
+      dueAmount: number,
+      paidAmount: number
+    ) => {
       if (dueAmount <= 0) return 'PAID'
       if (paidAmount > 0) return 'PARTIAL'
       return 'DUE'
@@ -159,7 +168,10 @@ export async function POST(request: NextRequest) {
         paidAmount,
         dueAmount,
 
-        paymentStatus: getPaymentStatus(dueAmount, paidAmount) as 'PAID' | 'PARTIAL' | 'DUE',
+        paymentStatus: getPaymentStatus(
+          dueAmount,
+          paidAmount
+        ) as 'PAID' | 'PARTIAL' | 'DUE',
 
         paymentMode,
 
@@ -249,12 +261,16 @@ export async function POST(request: NextRequest) {
 
     // CASHBOOK
     if (paidAmount > 0) {
-      const lastEntry =
-        await prisma.cashbook.findFirst({
+      // SAFE CASHBOOK QUERY
+      const cashbookEntries =
+        await prisma.cashbook.findMany({
           orderBy: {
             createdAt: 'desc',
           },
+          take: 1,
         })
+
+      const lastEntry = cashbookEntries[0]
 
       const previousBalance =
         lastEntry?.newBalance || 0
