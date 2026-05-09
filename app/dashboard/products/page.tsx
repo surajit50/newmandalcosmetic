@@ -423,8 +423,9 @@ export default function ProductsPage() {
                     required
                   />
                 </div>
+                {/* Updated Selling Price label to indicate GST inclusion */}
                 <div className="space-y-2">
-                  <Label htmlFor="sellingPrice">Selling Price *</Label>
+                  <Label htmlFor="sellingPrice">Selling Price (Incl. GST) *</Label>
                   <Input
                     id="sellingPrice"
                     type="number"
