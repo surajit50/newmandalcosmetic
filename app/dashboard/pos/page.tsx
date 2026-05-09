@@ -106,6 +106,7 @@ export default function POSPage() {
   const [newCustomer, setNewCustomer] = useState({ name: "", phone: "" });
   const [shopSettings, setShopSettings] = useState<any>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
+  const printFrameRef = useRef<HTMLIFrameElement>(null);
 
   const fetchProducts = useCallback(async () => {
     try {
@@ -302,10 +303,7 @@ export default function POSPage() {
   };
 
   const handlePrint = () => {
-    if (!completedSale || !shopSettings) return;
-
-    const printWindow = window.open("", "_blank");
-    if (!printWindow) return;
+    if (!completedSale || !shopSettings || !printFrameRef.current) return;
 
     const receiptHtml = ReactDOMServer.renderToString(
       <ThermalReceipt
@@ -326,24 +324,64 @@ export default function POSPage() {
       />,
     );
 
-    printWindow.document.write(`
+    const frame = printFrameRef.current;
+    const doc = frame.contentDocument || frame.contentWindow?.document;
+    if (!doc) return;
+
+    doc.open();
+    doc.write(`
       <html>
         <head>
           <title>Print Receipt</title>
           <style>
             @media print {
               @page { margin: 0; size: 80mm auto; }
-              body { margin: 0; }
+              body { margin: 0; padding: 0; width: 80mm; }
             }
-            body { font-family: monospace; }
+            body { 
+              font-family: 'Courier New', Courier, monospace; 
+              margin: 0; 
+              padding: 0;
+              width: 80mm;
+              font-size: 12px;
+            }
+            .receipt-container { width: 80mm; padding: 10px; }
+            .text-center { text-align: center; }
+            .flex { display: flex; }
+            .justify-between { justify-content: space-between; }
+            .font-bold { font-weight: bold; }
+            .border-t { border-top: 1px dashed black; }
+            .border-b { border-bottom: 1px dashed black; }
+            .border-double { border-top: 3px double black; }
+            .my-1 { margin-top: 4px; margin-bottom: 4px; }
+            .my-2 { margin-top: 8px; margin-bottom: 8px; }
+            .py-1 { padding-top: 4px; padding-bottom: 4px; }
+            .mt-2 { margin-top: 8px; }
+            .mt-4 { margin-top: 16px; }
+            .w-full { width: 100%; }
+            .text-left { text-align: left; }
+            .text-right { text-align: right; }
+            .uppercase { text-transform: uppercase; }
+            table { width: 100%; border-collapse: collapse; }
+            th, td { font-size: 11px; }
           </style>
         </head>
-        <body onload="window.print(); window.close();">
-          ${receiptHtml}
+        <body>
+          <div class="receipt-container">
+            ${receiptHtml}
+          </div>
+          <script>
+            window.onload = function() {
+              setTimeout(function() {
+                window.focus();
+                window.print();
+              }, 250);
+            };
+          </script>
         </body>
       </html>
     `);
-    printWindow.document.close();
+    doc.close();
   };
 
   const handleNewCustomer = async () => {
@@ -812,6 +850,9 @@ export default function POSPage() {
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* Hidden iframe for printing */}
+      <iframe ref={printFrameRef} className="hidden" title="Print Frame" />
     </div>
   );
 }
