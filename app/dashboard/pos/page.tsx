@@ -87,8 +87,9 @@ interface Sale {
   items: any[];
 }
 
-type PaymentMode = "CASH" | "UPI" | "CARD";
 
+
+type PaymentMode = "CASH" | "UPI" | "CARD"| "BANK";
 export default function POSPage() {
   // ---------- State ----------
   const [products, setProducts] = useState<Product[]>([]);
@@ -789,7 +790,9 @@ export default function POSPage() {
             </div>
 
             <div className="grid grid-cols-3 gap-2">
-              {(["CASH", "UPI", "CARD"] as const).map((mode) => (
+              {( ["CASH", "UPI", "CARD", "BANK"] as const
+).map((mode) => (
+              
                 <Button
                   key={mode}
                   variant={paymentMode === mode ? "default" : "outline"}
@@ -799,9 +802,21 @@ export default function POSPage() {
                   )}
                   onClick={() => setPaymentMode(mode)}
                 >
-                  {mode === "CASH" && <Banknote className="w-3.5 h-3.5" />}
-                  {mode === "UPI" && <Smartphone className="w-3.5 h-3.5" />}
-                  {mode === "CARD" && <CreditCard className="w-3.5 h-3.5" />}
+                  {mode === "CASH" && (
+  <Banknote className="w-3.5 h-3.5" />
+)}
+
+{mode === "UPI" && (
+  <Smartphone className="w-3.5 h-3.5" />
+)}
+
+{mode === "CARD" && (
+  <CreditCard className="w-3.5 h-3.5" />
+)}
+
+{mode === "BANK" && (
+  <CreditCard className="w-3.5 h-3.5" />
+)}
                   <span className="text-[8px] font-bold uppercase tracking-tighter">{mode}</span>
                 </Button>
               ))}
