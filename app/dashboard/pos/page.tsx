@@ -210,7 +210,6 @@ export default function POSPage() {
     }
     setSearchQuery("");
     setSearchResults([]);
-    searchInputRef.current?.focus();
   };
 
   const updateQuantity = (productId: string, quantity: number) => {

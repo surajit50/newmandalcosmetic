@@ -115,8 +115,13 @@ export async function POST(request: NextRequest) {
       })
 
       // 4. Update Stock and create transactions
+      const productIds = body.items.map((item: any) => item.productId)
+      const products = await tx.product.findMany({
+        where: { id: { in: productIds } }
+      })
+
       for (const item of body.items) {
-        const product = await tx.product.findUnique({ where: { id: item.productId } })
+        const product = products.find(p => p.id === item.productId)
         if (!product) throw new Error(`Product ${item.productName} not found`)
 
         const previousStock = product.currentStock
@@ -177,6 +182,9 @@ export async function POST(request: NextRequest) {
       }
 
       return sale
+    }, {
+      maxWait: 10000, // Wait up to 10s for connection
+      timeout: 20000, // Allow up to 20s for transaction execution
     })
 
     return NextResponse.json(result)
