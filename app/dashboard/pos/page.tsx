@@ -87,6 +87,8 @@ interface Sale {
   items: any[];
 }
 
+type PaymentMode = "CASH" | "UPI" | "CARD";
+
 export default function POSPage() {
   // ---------- State ----------
   const [products, setProducts] = useState<Product[]>([]);
@@ -96,7 +98,7 @@ export default function POSPage() {
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
   const [customerSearch, setCustomerSearch] = useState("");
   const [customers, setCustomers] = useState<Customer[]>([]);
-  const [paymentMode, setPaymentMode] = useState<"CASH" | "UPI" | "CARD">("CASH");
+  const [paymentMode, setPaymentMode] = useState<PaymentMode>("CASH");
   const [paidAmount, setPaidAmount] = useState("");
   const [isProcessing, setIsProcessing] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
@@ -650,7 +652,7 @@ export default function POSPage() {
                 .map((p) => (
                   <div
                     key={p.id}
-                    className="group bg-card hover:bg-primary/5 cursor-pointer transition-all active:scale-[0.98] border border-border/50 rounded-lg p-2 sm:p-3 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-1.5 sm:gap-3 shadow-sm hover:shadow-md hover:border-primary/20"
+                    className="group bg-card hover:bg-primary/5 cursor-pointer transition-all active:scale-[0.98] border border-border/50 rounded-lg p-2 sm:p-3 flex flex-col sm:flex-row items-start sm:items-center justify-start"
                     onClick={() => addToCart(p)}
                   >
                     <div className="flex items-center gap-2 sm:gap-3 min-w-0 w-full">
@@ -787,7 +789,7 @@ export default function POSPage() {
             </div>
 
             <div className="grid grid-cols-3 gap-2">
-              {["CASH", "UPI", "CARD"].map((mode) => (
+              {(["CASH", "UPI", "CARD"] as const).map((mode) => (
                 <Button
                   key={mode}
                   variant={paymentMode === mode ? "default" : "outline"}
@@ -795,7 +797,7 @@ export default function POSPage() {
                     "h-10 rounded-xl flex flex-col gap-0.5 transition-all p-0",
                     paymentMode === mode ? "shadow-md shadow-primary/20 scale-105" : "bg-card border-border/50",
                   )}
-                  onClick={() => setPaymentMode(mode as any)}
+                  onClick={() => setPaymentMode(mode)}
                 >
                   {mode === "CASH" && <Banknote className="w-3.5 h-3.5" />}
                   {mode === "UPI" && <Smartphone className="w-3.5 h-3.5" />}
