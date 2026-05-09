@@ -4,6 +4,9 @@ import { authOptions } from '@/lib/auth'
 import prisma from '@/lib/prisma'
 import { generateInvoiceNumber } from '@/lib/types'
 
+// --------------------------------------------------
+// POST – Create a new sale (GST‑inclusive)
+// --------------------------------------------------
 export async function POST(request: NextRequest) {
   const session = await getServerSession(authOptions)
 
@@ -24,9 +27,7 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // =========================================
-    // SETTINGS
-    // =========================================
+    // ----- Settings (increment invoice number) -----
     const settings = await prisma.settings.findFirst()
     if (!settings) {
       throw new Error('Settings not found')
@@ -42,10 +43,7 @@ export async function POST(request: NextRequest) {
       updatedSettings.currentInvoiceNumber
     )
 
-    // =========================================
-    // TOTALS (GST‑inclusive logic)
-    // =========================================
-
+    // ----- Compute totals (inclusive logic) -----
     // subtotal = sum of all inclusive selling prices * quantities (before discount)
     const subtotal = body.items.reduce(
       (sum: number, item: any) =>
@@ -59,44 +57,38 @@ export async function POST(request: NextRequest) {
       0
     )
 
-    // For each line, compute taxable base and GST from the inclusive amount
+    // For each line, extract taxable base and GST from the inclusive amount
     const lineItems = body.items.map((item: any) => {
       const inclusive = item.sellingPrice * item.quantity - (item.discount || 0)
-      const taxable = inclusive / (1 + (item.gstRate / 100))           // base amount
-      const gstAmount = inclusive - taxable                            // GST amount
+      const taxable = inclusive / (1 + item.gstRate / 100)    // base amount
+      const gstAmount = inclusive - taxable                   // GST amount
 
       return {
         ...item,
-        taxable,        // we'll store it in the sale item if needed
-        gstAmount,      // total GST for this line
-        total: inclusive,
+        taxable,      // optional, not saved in schema, just for clarity
+        gstAmount,    // total GST for this line
+        total: inclusive,  // final line total (already inclusive)
       }
     })
 
-    // totalGst = sum of per‑line GST
     const totalGst = lineItems.reduce(
       (sum, item) => sum + item.gstAmount,
       0
     )
 
     // grand total = subtotal (inclusive before discount) - discount
-    // (which already equals sum of line totals)
     const grandTotal = subtotal - totalDiscount
 
     const paidAmount = parseFloat(body.paidAmount) || grandTotal
     const dueAmount = grandTotal - paidAmount
 
-    // =========================================
-    // GET PRODUCTS
-    // =========================================
+    // ----- Get products for stock validation -----
     const productIds = body.items.map((item: any) => item.productId)
     const products = await prisma.product.findMany({
       where: { id: { in: productIds } },
     })
 
-    // =========================================
-    // STOCK VALIDATION
-    // =========================================
+    // ----- Stock validation -----
     for (const item of body.items) {
       const product = products.find((p) => p.id === item.productId)
       if (!product) {
@@ -107,9 +99,7 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // =========================================
-    // CREATE SALE
-    // =========================================
+    // ----- Create the sale -----
     const sale = await prisma.sale.create({
       data: {
         invoiceNumber,
@@ -133,11 +123,11 @@ export async function POST(request: NextRequest) {
             productName: item.productName,
             quantity: item.quantity,
             mrp: item.mrp,
-            sellingPrice: item.sellingPrice,        // still inclusive unit price
+            sellingPrice: item.sellingPrice,  // inclusive per unit
             discount: item.discount || 0,
             gstRate: item.gstRate,
-            gstAmount: item.gstAmount,              // total GST for the line
-            total: item.total,                      // final line total (inclusive)
+            gstAmount: item.gstAmount,        // total GST for the line
+            total: item.total,                // final line total (inclusive)
           })),
         },
       },
@@ -146,9 +136,7 @@ export async function POST(request: NextRequest) {
       },
     })
 
-    // =========================================
-    // UPDATE STOCK
-    // =========================================
+    // ----- Update stock & create stock transactions -----
     await Promise.all(
       body.items.map(async (item: any) => {
         const product = products.find((p) => p.id === item.productId)
@@ -178,9 +166,7 @@ export async function POST(request: NextRequest) {
       })
     )
 
-    // =========================================
-    // CUSTOMER UPDATE
-    // =========================================
+    // ----- Update customer totals -----
     if (body.customerId) {
       await prisma.customer.update({
         where: { id: body.customerId },
@@ -191,9 +177,7 @@ export async function POST(request: NextRequest) {
       })
     }
 
-    // =========================================
-    // CASHBOOK
-    // =========================================
+    // ----- Cashbook entry -----
     if (paidAmount > 0) {
       const lastEntry = await prisma.cashbook.findFirst({
         orderBy: { createdAt: 'desc' },
@@ -226,6 +210,63 @@ export async function POST(request: NextRequest) {
             ? error.message
             : 'Failed to create sale',
       },
+      { status: 500 }
+    )
+  }
+}
+
+// --------------------------------------------------
+// GET – List sales (with optional search)
+// --------------------------------------------------
+export async function GET(request: NextRequest) {
+  const session = await getServerSession(authOptions)
+
+  if (!session) {
+    return NextResponse.json(
+      { error: 'Unauthorized' },
+      { status: 401 }
+    )
+  }
+
+  try {
+    const { searchParams } = new URL(request.url)
+    const search = searchParams.get('search') || ''
+    const limit = parseInt(searchParams.get('limit') || '50')
+    const page = parseInt(searchParams.get('page') || '1')
+    const skip = (page - 1) * limit
+
+    // Build filter
+    const where: any = {}
+    if (search) {
+      where.OR = [
+        { invoiceNumber: { contains: search, mode: 'insensitive' } },
+        { customerName: { contains: search, mode: 'insensitive' } },
+      ]
+    }
+
+    const [sales, total] = await Promise.all([
+      prisma.sale.findMany({
+        where,
+        include: {
+          items: true,
+        },
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take: limit,
+      }),
+      prisma.sale.count({ where }),
+    ])
+
+    return NextResponse.json({
+      sales,
+      total,
+      page,
+      totalPages: Math.ceil(total / limit),
+    })
+  } catch (error) {
+    console.error(error)
+    return NextResponse.json(
+      { error: 'Failed to fetch sales' },
       { status: 500 }
     )
   }
