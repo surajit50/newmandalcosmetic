@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useEffect, useState, useRef, useCallback, useMemo } from "react";
@@ -17,9 +18,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Separator } from "@/components/ui/separator";
 import {
   Search,
   Plus,
@@ -43,13 +43,13 @@ import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import jsPDF from "jspdf";
 
-// ---------- Types ----------
+// ---------- Types (unchanged) ----------
 interface Product {
   id: string;
   name: string;
   barcode?: string;
   mrp: number;
-  sellingPrice: number; // always inclusive of GST
+  sellingPrice: number;
   gstRate: number;
   currentStock: number;
   unit: string;
@@ -60,10 +60,9 @@ interface CartItem {
   productName: string;
   quantity: number;
   mrp: number;
-  sellingPrice: number;   // inclusive per unit
-  discount: number;       // fixed discount on this line (in ₹)
-  gstRate: number;        // GST rate (e.g., 18 for 18%)
-  // gstAmount removed from state – computed on the fly
+  sellingPrice: number;
+  discount: number;
+  gstRate: number;
 }
 
 interface Customer {
@@ -90,12 +89,14 @@ interface Sale {
 type PaymentMode = "CASH" | "UPI" | "CARD" | "BANK";
 
 export default function POSPage() {
-  // ---------- State ----------
+  // ---------- State (unchanged) ----------
   const [products, setProducts] = useState<Product[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<Product[]>([]);
   const [cart, setCart] = useState<CartItem[]>([]);
-  const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
+  const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(
+    null
+  );
   const [customerSearch, setCustomerSearch] = useState("");
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [paymentMode, setPaymentMode] = useState<PaymentMode>("CASH");
@@ -109,7 +110,7 @@ export default function POSPage() {
   const searchInputRef = useRef<HTMLInputElement>(null);
   const printFrameRef = useRef<HTMLIFrameElement>(null);
 
-  // ---------- Data Fetching ----------
+  // ---------- Data Fetching (unchanged) ----------
   const fetchProducts = useCallback(async () => {
     try {
       const response = await fetch("/api/products");
@@ -129,7 +130,7 @@ export default function POSPage() {
     }
     try {
       const response = await fetch(
-        `/api/customers?search=${encodeURIComponent(query)}`,
+        `/api/customers?search=${encodeURIComponent(query)}`
       );
       if (response.ok) {
         const data = await response.json();
@@ -171,7 +172,7 @@ export default function POSPage() {
         .filter(
           (p) =>
             p.name.toLowerCase().includes(query) ||
-            (p.barcode && p.barcode.includes(query)),
+            (p.barcode && p.barcode.includes(query))
         )
         .slice(0, 10);
       setSearchResults(results);
@@ -180,13 +181,12 @@ export default function POSPage() {
     }
   }, [searchQuery, products]);
 
-  // ---------- Cart Functions (GST-inclusive, discount-aware) ----------
+  // ---------- Cart Functions (unchanged) ----------
   const addToCart = (product: Product) => {
     if (product.currentStock <= 0) {
       alert("Product is out of stock");
       return;
     }
-
     const existingItem = cart.find((item) => item.productId === product.id);
     if (existingItem) {
       if (existingItem.quantity >= product.currentStock) {
@@ -195,7 +195,6 @@ export default function POSPage() {
       }
       updateQuantity(product.id, existingItem.quantity + 1);
     } else {
-      // No gstAmount stored – will be computed dynamically
       setCart([
         ...cart,
         {
@@ -222,17 +221,15 @@ export default function POSPage() {
       removeFromCart(productId);
       return;
     }
-
     const product = products.find((p) => p.id === productId);
     if (product && quantity > product.currentStock) {
       alert("Not enough stock available");
       return;
     }
-
     setCart(
       cart.map((item) =>
-        item.productId === productId ? { ...item, quantity } : item,
-      ),
+        item.productId === productId ? { ...item, quantity } : item
+      )
     );
   };
 
@@ -240,57 +237,56 @@ export default function POSPage() {
     setCart(cart.filter((item) => item.productId !== productId));
   };
 
-  // ---------- Discount change handler (with validation) ----------
   const handleDiscountChange = (productId: string, rawValue: string) => {
     const val = parseFloat(rawValue) || 0;
-    const item = cart.find(i => i.productId === productId);
+    const item = cart.find((i) => i.productId === productId);
     if (!item) return;
     const maxDiscount = item.sellingPrice * item.quantity;
     const finalDiscount = Math.min(val, maxDiscount);
-
-    setCart(prev =>
-      prev.map(i =>
+    setCart((prev) =>
+      prev.map((i) =>
         i.productId === productId ? { ...i, discount: finalDiscount } : i
       )
     );
   };
 
-  // ---------- Computed totals with dynamic GST ----------
-  const { subtotal, totalDiscount, totalGst, grandTotal, lineGstMap } = useMemo(() => {
-    const map: Record<string, number> = {};
-    let sub = 0;
-    let disc = 0;
-    let gst = 0;
+  // ---------- Computed totals (unchanged) ----------
+  const { subtotal, totalDiscount, totalGst, grandTotal, lineGstMap } =
+    useMemo(() => {
+      const map: Record<string, number> = {};
+      let sub = 0;
+      let disc = 0;
+      let gst = 0;
 
-    cart.forEach(item => {
-      const lineTotal = item.sellingPrice * item.quantity;
-      const lineInclusive = lineTotal - item.discount;
-      const taxable = lineInclusive / (1 + item.gstRate / 100);
-      const lineGst = lineInclusive - taxable;
+      cart.forEach((item) => {
+        const lineTotal = item.sellingPrice * item.quantity;
+        const lineInclusive = lineTotal - item.discount;
+        const taxable = lineInclusive / (1 + item.gstRate / 100);
+        const lineGst = lineInclusive - taxable;
 
-      map[item.productId] = lineGst;
+        map[item.productId] = lineGst;
 
-      sub += lineTotal;
-      disc += item.discount;
-      gst += lineGst;
-    });
+        sub += lineTotal;
+        disc += item.discount;
+        gst += lineGst;
+      });
 
-    const grand = sub - disc;
+      const grand = sub - disc;
 
-    return {
-      subtotal: sub,
-      totalDiscount: disc,
-      totalGst: gst,
-      grandTotal: grand,
-      lineGstMap: map
-    };
-  }, [cart]);
+      return {
+        subtotal: sub,
+        totalDiscount: disc,
+        totalGst: gst,
+        grandTotal: grand,
+        lineGstMap: map,
+      };
+    }, [cart]);
 
   const paidAmountNum = parseFloat(paidAmount) || 0;
   const dueAmount = grandTotal - paidAmountNum;
   const isOverpaid = paidAmountNum > grandTotal && grandTotal > 0;
 
-  // ---------- Checkout ----------
+  // ---------- Checkout (unchanged) ----------
   const handleCheckout = async () => {
     if (cart.length === 0) {
       alert("Cart is empty");
@@ -315,7 +311,6 @@ export default function POSPage() {
             sellingPrice: item.sellingPrice,
             discount: item.discount,
             gstRate: item.gstRate,
-            // No gstAmount – backend recalculates correctly
           })),
           customerId: selectedCustomer?.id || null,
           customerName: selectedCustomer?.name || "Walk-in Customer",
@@ -345,9 +340,15 @@ export default function POSPage() {
     }
   };
 
-  // ---------- Print ----------
+  // ---------- Print (UPDATED) ----------
   const handlePrint = () => {
     if (!completedSale || !shopSettings || !printFrameRef.current) return;
+
+    // Ensure each item has a computed 'total' field
+    const receiptItems = completedSale.items.map((item: any) => ({
+      ...item,
+      total: item.total ?? (item.sellingPrice * item.quantity - (item.discount || 0)),
+    }));
 
     const receiptHtml = ReactDOMServer.renderToString(
       <ThermalReceipt
@@ -358,14 +359,14 @@ export default function POSPage() {
         invoiceNumber={completedSale.invoiceNumber}
         date={new Date(completedSale.createdAt)}
         customerName={completedSale.customerName}
-        items={completedSale.items}
+        items={receiptItems}
         subtotal={completedSale.subtotal}
         totalGst={completedSale.totalGst}
         totalDiscount={completedSale.totalDiscount}
         grandTotal={completedSale.grandTotal}
         paidAmount={completedSale.paidAmount}
         dueAmount={completedSale.dueAmount}
-      />,
+      />
     );
 
     const frame = printFrameRef.current;
@@ -401,7 +402,7 @@ export default function POSPage() {
     doc.close();
   };
 
-  // ---------- PDF Generation ----------
+  // ---------- PDF Generation (UPDATED) ----------
   const handleSavePDF = async () => {
     if (!completedSale || !shopSettings) {
       toast.error("No sale data available");
@@ -409,84 +410,148 @@ export default function POSPage() {
     }
     const toastId = toast.loading("Generating PDF...");
     try {
-      const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: [80, 120] });
+      const doc = new jsPDF({
+        orientation: "portrait",
+        unit: "mm",
+        format: [80, 120],
+      });
       const pageWidth = 80;
       const margin = 4;
-      let y = 8;
+      let y = 6;
 
       const centerText = (text: string, size = 10, style: "normal" | "bold" = "normal") => {
         doc.setFont("courier", style);
         doc.setFontSize(size);
         const textWidth = doc.getTextWidth(text);
         doc.text(text, (pageWidth - textWidth) / 2, y);
-        y += size * 0.5 + 1;
+        y += size * 0.5 + 1.5;
       };
-      const leftText = (text: string, size = 9, style: "normal" | "bold" = "normal") => {
-        doc.setFont("courier", style);
+
+      const leftText = (text: string, size = 9) => {
+        doc.setFont("courier", "normal");
         doc.setFontSize(size);
         doc.text(text, margin, y);
-        y += size * 0.5 + 1;
+        y += size * 0.5 + 1.2;
       };
+
+      const rightText = (text: string, size = 9) => {
+        doc.setFont("courier", "normal");
+        doc.setFontSize(size);
+        const textWidth = doc.getTextWidth(text);
+        doc.text(text, pageWidth - margin - textWidth, y);
+      };
+
       const twoColumn = (left: string, right: string, size = 9, style: "normal" | "bold" = "normal") => {
         doc.setFont("courier", style);
         doc.setFontSize(size);
         doc.text(left, margin, y);
         const rightWidth = doc.getTextWidth(right);
         doc.text(right, pageWidth - margin - rightWidth, y);
-        y += size * 0.5 + 1;
+        y += size * 0.5 + 1.2;
       };
+
       const dashedLine = () => {
         let x = margin;
-        while (x < pageWidth - margin) { doc.line(x, y, x + 1.5, y); x += 3; }
+        while (x < pageWidth - margin) {
+          doc.line(x, y, x + 1.5, y);
+          x += 3;
+        }
         y += 3;
       };
 
-      centerText((shopSettings.shopName || "SHOP NAME").toUpperCase(), 12, "bold");
+      const solidLine = () => {
+        doc.line(margin, y, pageWidth - margin, y);
+        y += 2;
+      };
+
+      const currency = (val: number) =>
+        new Intl.NumberFormat("en-IN", {
+          minimumFractionDigits: 0,
+          maximumFractionDigits: 0,
+        }).format(val);
+
+      // Shop header
+      centerText(shopSettings.shopName.toUpperCase(), 12, "bold");
       if (shopSettings.address) centerText(shopSettings.address, 8);
       if (shopSettings.phone) centerText(`Phone: ${shopSettings.phone}`, 8);
       if (shopSettings.gstin) centerText(`GSTIN: ${shopSettings.gstin}`, 8);
+
       dashedLine();
 
-      leftText(`Invoice: ${completedSale.invoiceNumber}`, 8);
-      leftText(`Date: ${new Date(completedSale.createdAt).toLocaleString()}`, 8);
-      leftText(`Customer: ${completedSale.customerName || "Walk-in Customer"}`, 8);
+      // Invoice details
+      leftText(`Invoice: ${completedSale.invoiceNumber}`, 9);
+      const currentY = y;
+      rightText(
+        new Date(completedSale.createdAt).toLocaleString("en-IN", {
+          day: "2-digit",
+          month: "short",
+          year: "numeric",
+          hour: "2-digit",
+          minute: "2-digit",
+        }),
+        9
+      );
+      y = currentY + 4;
+      leftText(`Customer: ${completedSale.customerName || "Walk-in"}`, 9);
+
       dashedLine();
 
+      // Table header
       doc.setFont("courier", "bold");
       doc.setFontSize(8);
       doc.text("Item", margin, y);
-      doc.text("Qty", 42, y);
-      doc.text("Rate", 54, y);
-      doc.text("Amt", 70, y);
+      doc.text("Qty", 30, y);
+      doc.text("Rate", 40, y);
+      doc.text("Disc", 50, y);
+      doc.text("Amt", 65, y);
       y += 4;
       doc.setFont("courier", "normal");
 
+      // Items
       completedSale.items.forEach((item: any) => {
-        const name = item.productName.length > 18 ? item.productName.substring(0, 18) + ".." : item.productName;
+        const name =
+          item.productName.length > 16
+            ? item.productName.substring(0, 16) + "."
+            : item.productName;
+        const itemTotal =
+          item.total ??
+          item.sellingPrice * item.quantity - (item.discount || 0);
         doc.text(name, margin, y);
-        doc.text(String(item.quantity), 42, y);
-        doc.text(Number(item.sellingPrice || 0).toFixed(0), 54, y);
-        doc.text(Number(item.total || 0).toFixed(0), 70, y);
+        doc.text(String(item.quantity), 30, y);
+        doc.text(currency(item.sellingPrice), 40, y);
+        doc.text(item.discount > 0 ? currency(item.discount) : "-", 50, y);
+        doc.text(currency(itemTotal), 65, y);
         y += 4;
       });
+
       dashedLine();
 
-      twoColumn("Subtotal", Number(completedSale.subtotal || 0).toFixed(0), 9);
-      twoColumn("GST", Number(completedSale.totalGst || 0).toFixed(0), 9);
+      // Totals
+      twoColumn("Subtotal", currency(completedSale.subtotal));
       if ((completedSale.totalDiscount || 0) > 0) {
-        twoColumn("Discount", Number(completedSale.totalDiscount || 0).toFixed(0), 9);
+        twoColumn("Discount", "-" + currency(completedSale.totalDiscount));
       }
-      doc.line(margin, y, pageWidth - margin, y); y += 1.5;
-      doc.line(margin, y, pageWidth - margin, y); y += 4;
-      twoColumn("TOTAL", Number(completedSale.grandTotal || 0).toFixed(0), 11, "bold");
-      y += 2;
-      twoColumn("Paid", Number(completedSale.paidAmount || 0).toFixed(0), 8);
-      twoColumn("Due", Number(completedSale.dueAmount || 0).toFixed(0), 8);
+      twoColumn("Taxable", currency(completedSale.subtotal - completedSale.totalDiscount));
+      twoColumn("GST", currency(completedSale.totalGst));
+      solidLine();
+      twoColumn("TOTAL", "₹ " + currency(completedSale.grandTotal), 11, "bold");
+
       dashedLine();
-      centerText("Thank You For Your Purchase!", 8);
-      centerText("Visit Again", 8);
+
+      // Payment
+      twoColumn("Paid", currency(completedSale.paidAmount));
+      twoColumn("Due", currency(completedSale.dueAmount));
+      const change = completedSale.paidAmount - completedSale.grandTotal;
+      if (change > 0) {
+        twoColumn("Change", currency(change));
+      }
+
+      dashedLine();
+      centerText("Thank you for your purchase!", 8);
+      centerText("Visit again", 8);
       y += 4;
 
+      // Dynamic height
       const finalHeight = y + 5;
       (doc as any).internal.pageSize.height = finalHeight;
       (doc as any).internal.pageSize.width = 80;
@@ -498,7 +563,7 @@ export default function POSPage() {
     }
   };
 
-  // ---------- Customer creation ----------
+  // ---------- Customer creation (unchanged) ----------
   const handleNewCustomer = async () => {
     if (!newCustomer.name || !newCustomer.phone) {
       alert("Name and phone are required");
@@ -532,6 +597,9 @@ export default function POSPage() {
       currency: "INR",
       maximumFractionDigits: 0,
     }).format(amount);
+
+
+
 
   // ---------- Render ----------
   return (
