@@ -337,57 +337,103 @@ export default function POSPage() {
 
     doc.open();
     doc.write(`
-      <html>
-        <head>
-          <title>Print Receipt</title>
-          <style>
-            @media print {
-              @page { margin: 0; size: 80mm auto; }
-              body { margin: 0; padding: 0; width: 80mm; }
-            }
-            body {
-              font-family: 'Courier New', Courier, monospace;
-              margin: 0;
-              padding: 0;
-              width: 80mm;
-              font-size: 12px;
-            }
-            .receipt-container { width: 80mm; padding: 10px; }
-            .text-center { text-align: center; }
-            .flex { display: flex; }
-            .justify-between { justify-content: space-between; }
-            .font-bold { font-weight: bold; }
-            .border-t { border-top: 1px dashed black; }
-            .border-b { border-bottom: 1px dashed black; }
-            .border-double { border-top: 3px double black; }
-            .my-1 { margin-top: 4px; margin-bottom: 4px; }
-            .my-2 { margin-top: 8px; margin-bottom: 8px; }
-            .py-1 { padding-top: 4px; padding-bottom: 4px; }
-            .mt-2 { margin-top: 8px; }
-            .mt-4 { margin-top: 16px; }
-            .w-full { width: 100%; }
-            .text-left { text-align: left; }
-            .text-right { text-align: right; }
-            .uppercase { text-transform: uppercase; }
-            table { width: 100%; border-collapse: collapse; }
-            th, td { font-size: 11px; }
-          </style>
-        </head>
-        <body>
-          <div class="receipt-container">
-            ${receiptHtml}
-          </div>
-          <script>
-            window.onload = function() {
-              setTimeout(function() {
-                window.focus();
-                window.print();
-              }, 250);
-            };
-          </script>
-        </body>
-      </html>
-    `);
+<html>
+<head>
+<title>Receipt</title>
+
+<style>
+  @page {
+    size: 80mm auto;
+    margin: 0;
+  }
+
+  html,
+  body {
+    width: 80mm;
+    margin: 0;
+    padding: 0;
+    font-family: monospace;
+    background: white;
+  }
+
+  body {
+    padding: 4mm;
+    box-sizing: border-box;
+  }
+
+  .receipt {
+    width: 72mm;
+    margin: 0 auto;
+    font-size: 12px;
+    color: black;
+  }
+
+  .center {
+    text-align: center;
+  }
+
+  .bold {
+    font-weight: bold;
+  }
+
+  .line {
+    border-top: 1px dashed black;
+    margin: 4px 0;
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 11px;
+  }
+
+  th,
+  td {
+    padding: 2px 0;
+  }
+
+  .right {
+    text-align: right;
+  }
+
+  .total {
+    font-size: 14px;
+    font-weight: bold;
+  }
+
+  @media print {
+    html,
+    body {
+      width: 80mm;
+      height: auto;
+    }
+
+    body {
+      margin: 0;
+    }
+
+    .receipt {
+      width: 72mm;
+    }
+  }
+</style>
+</head>
+
+<body>
+
+<div class="receipt">
+${receiptHtml}
+</div>
+
+<script>
+window.onload = () => {
+  window.print();
+};
+</script>
+
+</body>
+</html>
+`);
     doc.close();
   };
 
