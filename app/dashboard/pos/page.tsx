@@ -16,7 +16,7 @@ import { NewCustomerDialog } from "@/components/pos/new-customer-dialog";
 import ReactDOMServer from "react-dom/server";
 import { toast } from "sonner";
 import jsPDF from "jspdf";
-import { Product, CartItem, Customer, Sale, PaymentMode } from "@/lib/types";
+import { Product, CartItem, Customer, Sale, PaymentMode } from "@/lib/type";
 import { formatCurrency, formatNumber } from "@/lib/currency";
 
 export default function POSPage() {
