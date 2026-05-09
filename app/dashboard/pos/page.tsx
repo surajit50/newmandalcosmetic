@@ -42,8 +42,8 @@ import ReactDOMServer from "react-dom/server";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import jsPDF from "jspdf";
-import html2canvas from "html2canvas";
 
+// ------------------------------------- types (same as before) -------------------------------------
 interface Product {
   id: string;
   name: string;
@@ -88,6 +88,7 @@ interface Sale {
   items: any[];
 }
 
+// ------------------------------------- component -------------------------------------
 export default function POSPage() {
   const [products, setProducts] = useState<Product[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
@@ -111,6 +112,7 @@ export default function POSPage() {
   const searchInputRef = useRef<HTMLInputElement>(null);
   const printFrameRef = useRef<HTMLIFrameElement>(null);
 
+  // ------------------------------------- fetch functions -------------------------------------
   const fetchProducts = useCallback(async () => {
     try {
       const response = await fetch("/api/products");
@@ -181,6 +183,7 @@ export default function POSPage() {
     }
   }, [searchQuery, products]);
 
+  // ------------------------------------- cart logic -------------------------------------
   const addToCart = (product: Product) => {
     if (product.currentStock <= 0) {
       alert("Product is out of stock");
@@ -255,6 +258,7 @@ export default function POSPage() {
     setCart(cart.filter((item) => item.productId !== productId));
   };
 
+  // ------------------------------------- totals -------------------------------------
   const subtotal = cart.reduce(
     (sum, item) => sum + item.sellingPrice * item.quantity,
     0,
@@ -263,6 +267,7 @@ export default function POSPage() {
   const grandTotal = subtotal + totalGst;
   const dueAmount = grandTotal - (parseFloat(paidAmount) || 0);
 
+  // ------------------------------------- checkout -------------------------------------
   const handleCheckout = async () => {
     if (cart.length === 0) {
       alert("Cart is empty");
@@ -305,6 +310,7 @@ export default function POSPage() {
     }
   };
 
+  // ------------------------------------- print (existing) -------------------------------------
   const handlePrint = () => {
     if (!completedSale || !shopSettings || !printFrameRef.current) return;
 
@@ -341,9 +347,9 @@ export default function POSPage() {
               @page { margin: 0; size: 80mm auto; }
               body { margin: 0; padding: 0; width: 80mm; }
             }
-            body { 
-              font-family: 'Courier New', Courier, monospace; 
-              margin: 0; 
+            body {
+              font-family: 'Courier New', Courier, monospace;
+              margin: 0;
               padding: 0;
               width: 80mm;
               font-size: 12px;
@@ -387,98 +393,170 @@ export default function POSPage() {
     doc.close();
   };
 
+  // ------------------------------------- PDF (new – jsPDF only) -------------------------------------
   const handleSavePDF = async () => {
     if (!completedSale || !shopSettings) return;
 
     const toastId = toast.loading("Generating PDF...");
 
     try {
-      const receiptElement = document.createElement("div");
-      receiptElement.style.position = "absolute";
-      receiptElement.style.left = "-9999px";
-      receiptElement.style.top = "0";
-      receiptElement.style.width = "80mm";
-      receiptElement.style.background = "white";
-      document.body.appendChild(receiptElement);
-
-      const receiptHtml = ReactDOMServer.renderToString(
-        <ThermalReceipt
-          shopName={shopSettings.shopName}
-          address={shopSettings.address}
-          phone={shopSettings.phone}
-          gstin={shopSettings.gstin}
-          invoiceNumber={completedSale.invoiceNumber}
-          date={new Date(completedSale.createdAt)}
-          customerName={completedSale.customerName}
-          items={completedSale.items}
-          subtotal={completedSale.subtotal}
-          totalGst={completedSale.totalGst}
-          totalDiscount={completedSale.totalDiscount}
-          grandTotal={completedSale.grandTotal}
-          paidAmount={completedSale.paidAmount}
-          dueAmount={completedSale.dueAmount}
-        />,
-      );
-
-      receiptElement.innerHTML = `
-        <style>
-          .receipt-container { width: 80mm; padding: 10px; font-family: monospace; background: white; color: black; }
-          .text-center { text-align: center; }
-          .flex { display: flex; }
-          .justify-between { justify-content: space-between; }
-          .font-bold { font-weight: bold; }
-          .border-t { border-top: 1px dashed black; }
-          .border-b { border-bottom: 1px dashed black; }
-          .border-double { border-top: 3px double black; }
-          .my-1 { margin-top: 4px; margin-bottom: 4px; }
-          .my-2 { margin-top: 8px; margin-bottom: 8px; }
-          .py-1 { padding-top: 4px; padding-bottom: 4px; }
-          .mt-2 { margin-top: 8px; }
-          .mt-4 { margin-top: 16px; }
-          .w-full { width: 100%; }
-          .text-left { text-align: left; }
-          .text-right { text-align: right; }
-          .uppercase { text-transform: uppercase; }
-          table { width: 100%; border-collapse: collapse; }
-          th, td { font-size: 11px; }
-          h1 { margin: 0; font-size: 14px; }
-          p { margin: 2px 0; }
-        </style>
-        <div class="receipt-container">
-          ${receiptHtml}
-        </div>
-      `;
-
-      // Wait a bit for styles to apply
-      await new Promise((resolve) => setTimeout(resolve, 100));
-
-      const canvas = await html2canvas(receiptElement, {
-        scale: 2,
-        useCORS: true,
-        logging: false,
-        backgroundColor: "#ffffff",
-        windowWidth: 800, // Fixed width for better rendering
-      });
-
-      const imgData = canvas.toDataURL("image/png");
-      const pdf = new jsPDF({
+      const doc = new jsPDF({
         unit: "mm",
-        format: [80, (canvas.height * 80) / canvas.width],
+        format: [80, 297], // 80mm width, will be trimmed later
       });
 
-      pdf.addImage(
-        imgData,
-        "PNG",
-        0,
-        0,
-        80,
-        (canvas.height * 80) / canvas.width,
-        undefined,
-        "FAST",
-      );
-      pdf.save(`Invoice-${completedSale.invoiceNumber}.pdf`);
+      const pageWidth = 80;
+      const margin = 4;
+      let y = 8;
 
-      document.body.removeChild(receiptElement);
+      // === helper functions ===
+      const centerText = (text: string, size = 12, style = "normal") => {
+        doc.setFont("Courier", style);
+        doc.setFontSize(size);
+        const textWidth = doc.getTextWidth(text);
+        doc.text(text, (pageWidth - textWidth) / 2, y);
+        y += size * 0.4;
+      };
+
+      const leftText = (text: string, size = 10, style = "normal") => {
+        doc.setFont("Courier", style);
+        doc.setFontSize(size);
+        doc.text(text, margin, y);
+        y += size * 0.4;
+      };
+
+      const rightText = (text: string, size = 10, style = "normal") => {
+        doc.setFont("Courier", style);
+        doc.setFontSize(size);
+        const textWidth = doc.getTextWidth(text);
+        doc.text(text, pageWidth - margin - textWidth, y);
+        y += size * 0.4;
+      };
+
+      const twoColumn = (left: string, right: string, size = 10) => {
+        doc.setFont("Courier", "normal");
+        doc.setFontSize(size);
+        doc.text(left, margin, y);
+        const rWidth = doc.getTextWidth(right);
+        doc.text(right, pageWidth - margin - rWidth, y);
+        y += size * 0.4;
+      };
+
+      const dashedLine = () => {
+        doc.setDrawColor(0);
+        doc.setLineWidth(0.1);
+        const startX = margin;
+        const endX = pageWidth - margin;
+        const segLength = 2;
+        let x = startX;
+        while (x < endX) {
+          const nextX = Math.min(x + segLength, endX);
+          doc.line(x, y, nextX, y);
+          x += segLength * 2;
+        }
+        y += 2;
+      };
+
+      // ---- Header ----
+      centerText(shopSettings.shopName.toUpperCase(), 12, "bold");
+      if (shopSettings.address) {
+        centerText(shopSettings.address, 8);
+      }
+      if (shopSettings.phone || shopSettings.gstin) {
+        const contact = [shopSettings.phone, shopSettings.gstin]
+          .filter(Boolean)
+          .join(" | ");
+        centerText(contact, 8);
+      }
+      dashedLine();
+
+      // Invoice & Date
+      twoColumn(
+        `Invoice: ${completedSale.invoiceNumber}`,
+        `Date: ${new Date(completedSale.createdAt).toLocaleDateString()}`,
+        8,
+      );
+
+      // Customer
+      if (
+        completedSale.customerName &&
+        completedSale.customerName !== "Walk-in Customer"
+      ) {
+        leftText(`Customer: ${completedSale.customerName}`, 8);
+      } else {
+        leftText("Walk-in Customer", 8);
+      }
+      dashedLine();
+
+      // Table header
+      doc.setFont("Courier", "bold");
+      doc.setFontSize(8);
+      const col1 = margin;
+      const col2 = margin + 35; // Qty column
+      const col3 = pageWidth - margin - 14; // Rate (right aligned)
+      const col4 = pageWidth - margin - 14; // Amt (right aligned)
+
+      doc.text("Item", col1, y);
+      doc.text("Qty", col2, y);
+      doc.text("Rate", col3 - 2, y);
+      doc.text("Amt", col4, y, { align: "right" });
+      y += 3.5;
+
+      // Items
+      doc.setFont("Courier", "normal");
+      completedSale.items.forEach((item: any) => {
+        const name =
+          item.productName.length > 20
+            ? item.productName.substring(0, 18) + ".."
+            : item.productName;
+        doc.text(name, col1, y);
+        doc.text(`${item.quantity}`, col2, y);
+        doc.text(`${item.sellingPrice.toFixed(0)}`, col3 - 2, y);
+        doc.text(`${item.total.toFixed(0)}`, col4, y, { align: "right" });
+        y += 3.5;
+      });
+
+      dashedLine();
+
+      // Totals
+      twoColumn("Subtotal:", completedSale.subtotal.toFixed(0), 9);
+      twoColumn("GST:", completedSale.totalGst.toFixed(0), 9);
+      if (completedSale.totalDiscount > 0) {
+        twoColumn("Discount:", completedSale.totalDiscount.toFixed(0), 9);
+      }
+
+      // Double line before grand total
+      doc.setLineWidth(0.3);
+      doc.line(margin, y, pageWidth - margin, y);
+      y += 1.5;
+      doc.line(margin, y, pageWidth - margin, y);
+      y += 3;
+
+      doc.setFont("Courier", "bold");
+      doc.setFontSize(11);
+      const totalStr = `TOTAL: ${completedSale.grandTotal.toFixed(0)}`;
+      doc.text(totalStr, margin, y);
+
+      y += 6;
+
+      // Payment details
+      doc.setFont("Courier", "normal");
+      doc.setFontSize(8);
+      twoColumn("Paid:", completedSale.paidAmount.toFixed(0), 8);
+      twoColumn("Due:", completedSale.dueAmount.toFixed(0), 8);
+
+      dashedLine();
+
+      // Footer
+      centerText("Thank you for your purchase!", 8);
+      centerText("Visit again", 8);
+
+      // Trim page height
+      const pageHeight = y + 10;
+      doc.internal.pageSize.height = pageHeight;
+
+      doc.save(`Invoice-${completedSale.invoiceNumber}.pdf`);
+
       toast.success("PDF saved successfully", { id: toastId });
     } catch (error) {
       console.error("PDF Error:", error);
@@ -486,6 +564,7 @@ export default function POSPage() {
     }
   };
 
+  // ------------------------------------- customer creation -------------------------------------
   const handleNewCustomer = async () => {
     if (!newCustomer.name || !newCustomer.phone) {
       alert("Name and phone are required");
@@ -523,6 +602,7 @@ export default function POSPage() {
     }).format(amount);
   };
 
+  // ------------------------------------- render -------------------------------------
   return (
     <div className="h-screen flex flex-col overflow-hidden bg-background">
       {/* Header */}
