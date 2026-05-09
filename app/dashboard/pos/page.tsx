@@ -2,9 +2,8 @@
 "use client";
 
 import { useEffect, useState, useRef, useCallback, useMemo } from "react";
-import { Button } from "@/components/ui/button";
-import { ShoppingCart, Plus } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { ShoppingCart } from "lucide-react";
 import { ThermalReceipt } from "@/components/pos/thermal-receipt";
 import { SearchBar } from "@/components/pos/search-bar";
 import { ProductGrid } from "@/components/pos/product-grid";
@@ -13,11 +12,10 @@ import { CartItemRow } from "@/components/pos/cart-item";
 import { CheckoutPanel } from "@/components/pos/checkout-panel";
 import { SuccessDialog } from "@/components/pos/success-dialog";
 import { NewCustomerDialog } from "@/components/pos/new-customer-dialog";
-import ReactDOMServer from "react-dom/server";
 import { toast } from "sonner";
-import jsPDF from "jspdf";
 import { Product, CartItem, Customer, Sale, PaymentMode } from "@/lib/type";
-import { formatCurrency, formatNumber } from "@/lib/currency";
+import { printReceipt } from "@/lib/print-receipt";
+import { generatePDF } from "@/lib/generate-pdf";
 
 export default function POSPage() {
   // ---------- State ----------
@@ -73,7 +71,10 @@ export default function POSPage() {
     }
   };
 
-  useEffect(() => { fetchProducts(); fetchSettings(); }, [fetchProducts]);
+  useEffect(() => {
+    fetchProducts();
+    fetchSettings();
+  }, [fetchProducts]);
 
   useEffect(() => {
     const debounce = setTimeout(() => fetchCustomers(customerSearch), 300);
@@ -84,7 +85,9 @@ export default function POSPage() {
     if (searchQuery.length >= 1) {
       const q = searchQuery.toLowerCase();
       setSearchResults(
-        products.filter(p => p.name.toLowerCase().includes(q) || (p.barcode && p.barcode.includes(q))).slice(0, 10)
+        products
+          .filter(p => p.name.toLowerCase().includes(q) || (p.barcode && p.barcode.includes(q)))
+          .slice(0, 10)
       );
     } else {
       setSearchResults([]);
@@ -105,19 +108,25 @@ export default function POSPage() {
       }
       updateQuantity(product.id, existing.quantity + 1);
     } else {
-      setCart([...cart, {
-        productId: product.id,
-        productName: product.name,
-        quantity: 1,
-        mrp: product.mrp,
-        sellingPrice: product.sellingPrice,
-        discount: 0,
-        gstRate: product.gstRate,
-      }]);
+      setCart([
+        ...cart,
+        {
+          productId: product.id,
+          productName: product.name,
+          quantity: 1,
+          mrp: product.mrp,
+          sellingPrice: product.sellingPrice,
+          discount: 0,
+          gstRate: product.gstRate,
+        },
+      ]);
     }
     setSearchQuery("");
     setSearchResults([]);
-    toast.success(`${product.name} added to cart`, { duration: 1000, position: "top-center" });
+    toast.success(`${product.name} added to cart`, {
+      duration: 1000,
+      position: "top-center",
+    });
   };
 
   const updateQuantity = (productId: string, quantity: number) => {
@@ -127,7 +136,7 @@ export default function POSPage() {
       alert("Not enough stock available");
       return;
     }
-    setCart(cart.map(item => item.productId === productId ? { ...item, quantity } : item));
+    setCart(cart.map(item => (item.productId === productId ? { ...item, quantity } : item)));
   };
 
   const removeFromCart = (productId: string) => {
@@ -139,13 +148,17 @@ export default function POSPage() {
     const item = cart.find(i => i.productId === productId);
     if (!item) return;
     const max = item.sellingPrice * item.quantity;
-    setCart(prev => prev.map(i => i.productId === productId ? { ...i, discount: Math.min(val, max) } : i));
+    setCart(prev =>
+      prev.map(i => (i.productId === productId ? { ...i, discount: Math.min(val, max) } : i))
+    );
   };
 
   // ---------- Computed Totals ----------
   const { subtotal, totalDiscount, totalGst, grandTotal, lineGstMap } = useMemo(() => {
     const map: Record<string, number> = {};
-    let sub = 0, disc = 0, gst = 0;
+    let sub = 0,
+      disc = 0,
+      gst = 0;
     cart.forEach(item => {
       const lineTotal = item.sellingPrice * item.quantity;
       const incl = lineTotal - item.discount;
@@ -156,7 +169,13 @@ export default function POSPage() {
       disc += item.discount;
       gst += lg;
     });
-    return { subtotal: sub, totalDiscount: disc, totalGst: gst, grandTotal: sub - disc, lineGstMap: map };
+    return {
+      subtotal: sub,
+      totalDiscount: disc,
+      totalGst: gst,
+      grandTotal: sub - disc,
+      lineGstMap: map,
+    };
   }, [cart]);
 
   const paidAmountNum = parseFloat(paidAmount) || 0;
@@ -165,8 +184,14 @@ export default function POSPage() {
 
   // ---------- Checkout ----------
   const handleCheckout = async () => {
-    if (cart.length === 0) { alert("Cart is empty"); return; }
-    if (isOverpaid) { alert("Paid amount exceeds the total. Please adjust."); return; }
+    if (cart.length === 0) {
+      alert("Cart is empty");
+      return;
+    }
+    if (isOverpaid) {
+      alert("Paid amount exceeds the total. Please adjust.");
+      return;
+    }
     setIsProcessing(true);
     try {
       const res = await fetch("/api/sales", {
@@ -209,41 +234,15 @@ export default function POSPage() {
     }
   };
 
-  // ---------- Print / PDF (same improved versions) ----------
+  // ---------- Print & PDF (now using lib) ----------
   const handlePrint = () => {
-    if (!completedSale || !shopSettings || !printFrameRef.current) return;
-    const receiptItems = completedSale.items.map((item: any) => ({
-      ...item,
-      total: item.total ?? (item.sellingPrice * item.quantity - (item.discount || 0)),
-    }));
-    const html = ReactDOMServer.renderToString(
-      <ThermalReceipt
-        shopName={shopSettings.shopName}
-        address={shopSettings.address}
-        phone={shopSettings.phone}
-        gstin={shopSettings.gstin}
-        invoiceNumber={completedSale.invoiceNumber}
-        date={new Date(completedSale.createdAt)}
-        customerName={completedSale.customerName}
-        items={receiptItems}
-        subtotal={completedSale.subtotal}
-        totalGst={completedSale.totalGst}
-        totalDiscount={completedSale.totalDiscount}
-        grandTotal={completedSale.grandTotal}
-        paidAmount={completedSale.paidAmount}
-        dueAmount={completedSale.dueAmount}
-      />
-    );
-    const frame = printFrameRef.current;
-    const doc = frame.contentDocument || frame.contentWindow?.document;
-    if (!doc) return;
-    doc.open();
-    doc.write(`<html>... </html>`); // same print template as before
-    doc.close();
+    if (!completedSale || !shopSettings) return;
+    printReceipt({ completedSale, shopSettings, printFrameRef });
   };
 
-  const handleSavePDF = async () => {
-    // same improved PDF generator from previous answer
+  const handleSavePDF = () => {
+    if (!completedSale || !shopSettings) return;
+    generatePDF({ completedSale, shopSettings });
   };
 
   // ---------- New Customer ----------
@@ -284,7 +283,9 @@ export default function POSPage() {
           </div>
           <div className="hidden sm:block">
             <h1 className="text-sm font-bold text-foreground leading-tight">POS Billing</h1>
-            <p className="text-[8px] text-muted-foreground uppercase font-medium tracking-widest">New Mandal</p>
+            <p className="text-[8px] text-muted-foreground uppercase font-medium tracking-widest">
+              New Mandal
+            </p>
           </div>
         </div>
 
@@ -293,7 +294,11 @@ export default function POSPage() {
           searchQuery={customerSearch}
           onSearchChange={setCustomerSearch}
           customers={customers}
-          onSelect={(cust) => { setSelectedCustomer(cust); setCustomers([]); setCustomerSearch(""); }}
+          onSelect={(cust) => {
+            setSelectedCustomer(cust);
+            setCustomers([]);
+            setCustomerSearch("");
+          }}
           onClear={() => setSelectedCustomer(null)}
           onNewCustomer={() => setShowCustomerDialog(true)}
         />
@@ -317,9 +322,14 @@ export default function POSPage() {
         {/* Cart Area */}
         <div className="w-full md:w-[350px] lg:w-[400px] flex flex-col bg-card/30 backdrop-blur-2xl border-t md:border-t-0 md:border-l border-border/50 relative shadow-2xl h-[40vh] md:h-full shrink-0">
           <div className="px-4 py-2 border-b border-border/50 flex items-center justify-between bg-card/50">
-            <ShoppingCart className="w-3.5 h-3.5 text-primary" />
-            <h2 className="font-black text-xs tracking-tight uppercase">Order</h2>
-            <Badge variant="secondary" className="rounded-full px-2 py-0.5 text-[10px] font-bold bg-primary text-primary-foreground">
+            <div className="flex items-center gap-2">
+              <ShoppingCart className="w-3.5 h-3.5 text-primary" />
+              <h2 className="font-black text-xs tracking-tight uppercase">Order</h2>
+            </div>
+            <Badge
+              variant="secondary"
+              className="rounded-full px-2 py-0.5 text-[10px] font-bold bg-primary text-primary-foreground"
+            >
               {cart.length} ITEMS
             </Badge>
           </div>
@@ -381,6 +391,7 @@ export default function POSPage() {
         onSave={handleNewCustomer}
       />
 
+      {/* Hidden iframe for printing */}
       <iframe ref={printFrameRef} className="hidden" title="Print Frame" />
     </div>
   );
