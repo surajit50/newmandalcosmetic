@@ -37,7 +37,6 @@ export async function generatePDF({
   const toastId = toast.loading("Generating PDF...");
 
   try {
-    // FIXED PAGE SIZE
     const doc = new jsPDF({
       orientation: "portrait",
       unit: "mm",
@@ -47,7 +46,6 @@ export async function generatePDF({
     const pageWidth = 80;
     const margin = 3;
 
-    // Start from top
     let y = 4;
 
     // =========================
@@ -289,13 +287,26 @@ export async function generatePDF({
 
     solidLine();
 
-    twoColumn(
-      "TOTAL",
+    // =========================
+    // FINAL TOTAL FIXED
+    // =========================
+
+    doc.setFont("courier", "bold");
+    doc.setFontSize(8);
+
+    doc.text("TOTAL", margin, y);
+
+    doc.text(
       "₹ " +
         formatNumber(completedSale.grandTotal),
-      10,
-      "bold"
+      76,
+      y,
+      {
+        align: "right",
+      }
     );
+
+    y += 5;
 
     dashedLine();
 
@@ -338,7 +349,7 @@ export async function generatePDF({
     centerText("Visit Again", 8);
 
     // =========================
-    // SAVE
+    // SAVE PDF
     // =========================
 
     doc.save(
