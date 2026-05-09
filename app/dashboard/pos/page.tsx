@@ -39,6 +39,7 @@ import {
 import { ThermalReceipt } from "@/components/pos/thermal-receipt";
 import ReactDOMServer from "react-dom/server";
 import { cn } from "@/lib/utils";
+import { toast } from "sonner";
 
 interface Product {
   id: string;
@@ -210,6 +211,10 @@ export default function POSPage() {
     }
     setSearchQuery("");
     setSearchResults([]);
+    toast.success(`${product.name} added to cart`, {
+      duration: 1000,
+      position: "top-center",
+    });
   };
 
   const updateQuantity = (productId: string, quantity: number) => {
@@ -488,27 +493,27 @@ export default function POSPage() {
                     {searchResults.map((p) => (
                       <div
                         key={p.id}
-                        className="p-3 hover:bg-primary/5 cursor-pointer transition-all flex items-center justify-between group/prod"
+                        className="p-2 sm:p-3 hover:bg-primary/5 cursor-pointer transition-all flex items-center justify-between group/prod"
                         onClick={() => addToCart(p)}
                       >
-                        <div className="flex items-center gap-3">
+                        <div className="flex items-center gap-2 sm:gap-3">
                           <div className="w-8 h-8 rounded-lg bg-secondary flex items-center justify-center border border-border/50 group-hover/prod:scale-110 transition-transform">
                             <Package className="w-4 h-4 text-muted-foreground" />
                           </div>
-                          <div className="flex flex-col">
-                            <span className="text-xs font-bold text-foreground group-hover/prod:text-primary transition-colors">
+                          <div className="flex flex-col min-w-0">
+                            <span className="text-[10px] sm:text-xs font-bold text-foreground group-hover/prod:text-primary transition-colors truncate">
                               {p.name}
                             </span>
-                            <span className="text-[10px] text-muted-foreground uppercase font-medium tracking-tighter">
+                            <span className="text-[8px] sm:text-[10px] text-muted-foreground uppercase font-medium tracking-tighter">
                               {p.barcode || "No barcode"}
                             </span>
                           </div>
                         </div>
                         <div className="text-right">
-                          <div className="text-sm font-black text-primary">
+                          <div className="text-xs sm:text-sm font-black text-primary">
                             {formatCurrency(p.sellingPrice)}
                           </div>
-                          <div className="text-[8px] text-muted-foreground uppercase font-bold tracking-widest">
+                          <div className="text-[7px] sm:text-[8px] text-muted-foreground uppercase font-bold tracking-widest">
                             Stock: {p.currentStock}
                           </div>
                         </div>
@@ -521,43 +526,43 @@ export default function POSPage() {
           </div>
 
           <div className="flex-1 overflow-y-auto scrollbar-hide">
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-2">
+            <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-1.5 sm:gap-2">
               {products
                 .filter((p) => p.currentStock > 0)
                 .slice(0, 40)
                 .map((p) => (
                   <div
                     key={p.id}
-                    className="group bg-card hover:bg-primary/5 cursor-pointer transition-all active:scale-[0.98] border border-border/50 rounded-xl p-3 flex items-center justify-between gap-3 shadow-sm hover:shadow-md hover:border-primary/20"
+                    className="group bg-card hover:bg-primary/5 cursor-pointer transition-all active:scale-[0.98] border border-border/50 rounded-lg p-2 sm:p-3 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-1.5 sm:gap-3 shadow-sm hover:shadow-md hover:border-primary/20"
                     onClick={() => addToCart(p)}
                   >
-                    <div className="flex items-center gap-3 min-w-0">
-                      <div className="w-10 h-10 rounded-lg bg-secondary/50 flex items-center justify-center shrink-0 group-hover:bg-primary/10 transition-colors">
-                        <Package className="w-5 h-5 text-muted-foreground group-hover:text-primary transition-colors" />
+                    <div className="flex items-center gap-2 sm:gap-3 min-w-0 w-full">
+                      <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-lg bg-secondary/50 flex items-center justify-center shrink-0 group-hover:bg-primary/10 transition-colors">
+                        <Package className="w-4 h-4 sm:w-5 sm:h-5 text-muted-foreground group-hover:text-primary transition-colors" />
                       </div>
-                      <div className="flex flex-col min-w-0">
-                        <h3 className="font-bold text-xs text-foreground truncate group-hover:text-primary transition-colors leading-tight">
+                      <div className="flex flex-col min-w-0 flex-1">
+                        <h3 className="font-bold text-[10px] sm:text-xs text-foreground truncate group-hover:text-primary transition-colors leading-tight">
                           {p.name}
                         </h3>
-                        <div className="flex items-center gap-2 mt-0.5">
-                          <span className="text-[10px] text-muted-foreground uppercase font-bold tracking-tighter">
+                        <div className="flex items-center justify-between sm:justify-start gap-2 mt-0.5">
+                          <span className="text-[8px] sm:text-[10px] text-muted-foreground uppercase font-bold tracking-tighter truncate">
                             {p.barcode || "No SKU"}
                           </span>
-                          <span className="text-[10px] font-black text-primary/80">
+                          <span className="text-[9px] sm:text-[10px] font-black text-primary/80">
                             {formatCurrency(p.sellingPrice)}
                           </span>
                         </div>
                       </div>
                     </div>
-                    <div className="flex flex-col items-end shrink-0 gap-1">
+                    <div className="flex flex-row sm:flex-col items-center sm:items-end justify-between w-full sm:w-auto shrink-0 gap-1">
                       <Badge
                         variant="secondary"
-                        className="text-[9px] px-1.5 py-0 h-4 font-bold bg-secondary/80"
+                        className="text-[8px] sm:text-[9px] px-1 sm:px-1.5 py-0 h-3.5 sm:h-4 font-bold bg-secondary/80"
                       >
                         {p.currentStock} {p.unit}
                       </Badge>
-                      <div className="w-6 h-6 rounded-full bg-primary/10 text-primary flex items-center justify-center scale-0 group-hover:scale-100 transition-transform">
-                        <Plus className="w-3.5 h-3.5" />
+                      <div className="w-5 h-5 sm:w-6 sm:h-6 rounded-full bg-primary/10 text-primary flex items-center justify-center sm:scale-0 group-hover:scale-100 transition-transform">
+                        <Plus className="w-3 sm:w-3.5 h-3 sm:h-3.5" />
                       </div>
                     </div>
                   </div>
@@ -596,24 +601,24 @@ export default function POSPage() {
                 {cart.map((item) => (
                   <div
                     key={item.productId}
-                    className="p-2 rounded-xl bg-card border border-border/50 shadow-sm animate-in slide-in-from-right duration-300 group/item relative"
+                    className="p-1.5 sm:p-2 rounded-xl bg-card border border-border/50 shadow-sm animate-in slide-in-from-right duration-300 group/item relative"
                   >
                     <div className="flex justify-between items-start gap-2 mb-1">
                       <div className="flex flex-col pr-6">
-                        <span className="font-bold text-[11px] leading-tight text-foreground line-clamp-1">
+                        <span className="font-bold text-[10px] sm:text-[11px] leading-tight text-foreground line-clamp-1">
                           {item.productName}
                         </span>
-                        <span className="text-[8px] text-muted-foreground font-bold uppercase tracking-widest mt-0.5">
+                        <span className="text-[7px] sm:text-[8px] text-muted-foreground font-bold uppercase tracking-widest mt-0.5">
                           GST {item.gstRate}%
                         </span>
                       </div>
                       <Button
                         variant="ghost"
                         size="icon"
-                        className="h-6 w-6 rounded-full text-destructive hover:bg-destructive/10 shrink-0 absolute top-1 right-1 opacity-0 group-hover/item:opacity-100 transition-opacity"
+                        className="h-5 w-5 sm:h-6 sm:w-6 rounded-full text-destructive hover:bg-destructive/10 shrink-0 absolute top-1 right-1 opacity-100 sm:opacity-0 group-hover/item:opacity-100 transition-opacity"
                         onClick={() => removeFromCart(item.productId)}
                       >
-                        <Trash2 className="w-3 h-3" />
+                        <Trash2 className="w-2.5 sm:w-3 h-2.5 sm:h-3" />
                       </Button>
                     </div>
                     <div className="flex items-center justify-between">
@@ -621,32 +626,32 @@ export default function POSPage() {
                         <Button
                           variant="ghost"
                           size="icon"
-                          className="h-6 w-6 rounded-full hover:bg-background"
+                          className="h-5 w-5 sm:h-6 sm:w-6 rounded-full hover:bg-background"
                           onClick={() =>
                             updateQuantity(item.productId, item.quantity - 1)
                           }
                         >
-                          <Minus className="w-2.5 h-2.5" />
+                          <Minus className="w-2 sm:w-2.5 h-2 sm:h-2.5" />
                         </Button>
-                        <span className="w-6 text-center text-[11px] font-black text-foreground">
+                        <span className="w-5 sm:w-6 text-center text-[10px] sm:text-[11px] font-black text-foreground">
                           {item.quantity}
                         </span>
                         <Button
                           variant="ghost"
                           size="icon"
-                          className="h-6 w-6 rounded-full hover:bg-background"
+                          className="h-5 w-5 sm:h-6 sm:w-6 rounded-full hover:bg-background"
                           onClick={() =>
                             updateQuantity(item.productId, item.quantity + 1)
                           }
                         >
-                          <Plus className="w-2.5 h-2.5" />
+                          <Plus className="w-2 sm:w-2.5 h-2 sm:h-2.5" />
                         </Button>
                       </div>
                       <div className="text-right">
-                        <div className="font-black text-sm text-primary">
+                        <div className="font-black text-xs sm:text-sm text-primary">
                           {formatCurrency(item.total)}
                         </div>
-                        <div className="text-[9px] text-muted-foreground font-bold">
+                        <div className="text-[8px] sm:text-[9px] text-muted-foreground font-bold">
                           {formatCurrency(item.sellingPrice)}/u
                         </div>
                       </div>
