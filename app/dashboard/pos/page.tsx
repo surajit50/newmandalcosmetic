@@ -43,7 +43,7 @@ import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import jsPDF from "jspdf";
 
-// ------------------------------------- types (same as before) -------------------------------------
+// ---------- Types (unchanged) ----------
 interface Product {
   id: string;
   name: string;
@@ -88,8 +88,8 @@ interface Sale {
   items: any[];
 }
 
-// ------------------------------------- component -------------------------------------
 export default function POSPage() {
+  // ---------- State ----------
   const [products, setProducts] = useState<Product[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<Product[]>([]);
@@ -112,7 +112,7 @@ export default function POSPage() {
   const searchInputRef = useRef<HTMLInputElement>(null);
   const printFrameRef = useRef<HTMLIFrameElement>(null);
 
-  // ------------------------------------- fetch functions -------------------------------------
+  // ---------- Data Fetching ----------
   const fetchProducts = useCallback(async () => {
     try {
       const response = await fetch("/api/products");
@@ -183,7 +183,7 @@ export default function POSPage() {
     }
   }, [searchQuery, products]);
 
-  // ------------------------------------- cart logic -------------------------------------
+  // ---------- Cart Functions ----------
   const addToCart = (product: Product) => {
     if (product.currentStock <= 0) {
       alert("Product is out of stock");
@@ -191,7 +191,6 @@ export default function POSPage() {
     }
 
     const existingItem = cart.find((item) => item.productId === product.id);
-
     if (existingItem) {
       if (existingItem.quantity >= product.currentStock) {
         alert("Not enough stock available");
@@ -258,7 +257,7 @@ export default function POSPage() {
     setCart(cart.filter((item) => item.productId !== productId));
   };
 
-  // ------------------------------------- totals -------------------------------------
+  // ---------- Totals ----------
   const subtotal = cart.reduce(
     (sum, item) => sum + item.sellingPrice * item.quantity,
     0,
@@ -267,7 +266,7 @@ export default function POSPage() {
   const grandTotal = subtotal + totalGst;
   const dueAmount = grandTotal - (parseFloat(paidAmount) || 0);
 
-  // ------------------------------------- checkout -------------------------------------
+  // ---------- Checkout ----------
   const handleCheckout = async () => {
     if (cart.length === 0) {
       alert("Cart is empty");
@@ -275,7 +274,6 @@ export default function POSPage() {
     }
 
     setIsProcessing(true);
-
     try {
       const response = await fetch("/api/sales", {
         method: "POST",
@@ -297,7 +295,7 @@ export default function POSPage() {
         setCart([]);
         setSelectedCustomer(null);
         setPaidAmount("");
-        fetchProducts(); // Refresh stock
+        fetchProducts();
       } else {
         const data = await response.json();
         alert(data.error || "Failed to process sale");
@@ -310,7 +308,7 @@ export default function POSPage() {
     }
   };
 
-  // ------------------------------------- print (existing) -------------------------------------
+  // ---------- Print (unchanged) ----------
   const handlePrint = () => {
     if (!completedSale || !shopSettings || !printFrameRef.current) return;
 
@@ -393,23 +391,26 @@ export default function POSPage() {
     doc.close();
   };
 
-  // ------------------------------------- PDF (new – jsPDF only) -------------------------------------
+  // ---------- PDF Generation (jsPDF only – fixed & robust) ----------
   const handleSavePDF = async () => {
-    if (!completedSale || !shopSettings) return;
+    if (!completedSale || !shopSettings) {
+      toast.error("No sale or shop settings available");
+      return;
+    }
 
     const toastId = toast.loading("Generating PDF...");
 
     try {
       const doc = new jsPDF({
         unit: "mm",
-        format: [80, 297], // 80mm width, will be trimmed later
+        format: [80, 297], // 80mm width, auto trimmed later
       });
 
       const pageWidth = 80;
       const margin = 4;
       let y = 8;
 
-      // === helper functions ===
+      // --- Helper functions (all use getTextWidth for precise alignment) ---
       const centerText = (text: string, size = 12, style = "normal") => {
         doc.setFont("Courier", style);
         doc.setFontSize(size);
@@ -425,20 +426,12 @@ export default function POSPage() {
         y += size * 0.4;
       };
 
-      const rightText = (text: string, size = 10, style = "normal") => {
-        doc.setFont("Courier", style);
-        doc.setFontSize(size);
-        const textWidth = doc.getTextWidth(text);
-        doc.text(text, pageWidth - margin - textWidth, y);
-        y += size * 0.4;
-      };
-
       const twoColumn = (left: string, right: string, size = 10) => {
         doc.setFont("Courier", "normal");
         doc.setFontSize(size);
         doc.text(left, margin, y);
-        const rWidth = doc.getTextWidth(right);
-        doc.text(right, pageWidth - margin - rWidth, y);
+        const rw = doc.getTextWidth(right);
+        doc.text(right, pageWidth - margin - rw, y);
         y += size * 0.4;
       };
 
@@ -457,8 +450,9 @@ export default function POSPage() {
         y += 2;
       };
 
-      // ---- Header ----
-      centerText(shopSettings.shopName.toUpperCase(), 12, "bold");
+      // --- Shop header ---
+      const shopName = shopSettings.shopName || "Shop Name";
+      centerText(shopName.toUpperCase(), 12, "bold");
       if (shopSettings.address) {
         centerText(shopSettings.address, 8);
       }
@@ -470,7 +464,7 @@ export default function POSPage() {
       }
       dashedLine();
 
-      // Invoice & Date
+      // Invoice / Date
       twoColumn(
         `Invoice: ${completedSale.invoiceNumber}`,
         `Date: ${new Date(completedSale.createdAt).toLocaleDateString()}`,
@@ -478,50 +472,58 @@ export default function POSPage() {
       );
 
       // Customer
-      if (
-        completedSale.customerName &&
-        completedSale.customerName !== "Walk-in Customer"
-      ) {
-        leftText(`Customer: ${completedSale.customerName}`, 8);
-      } else {
-        leftText("Walk-in Customer", 8);
-      }
+      const custName = completedSale.customerName || "Walk-in Customer";
+      const custDisplay =
+        custName !== "Walk-in Customer"
+          ? `Customer: ${custName}`
+          : "Walk-in Customer";
+      leftText(custDisplay, 8);
       dashedLine();
 
-      // Table header
+      // Table header (right‑aligned Rate & Amt)
       doc.setFont("Courier", "bold");
       doc.setFontSize(8);
-      const col1 = margin;
-      const col2 = margin + 35; // Qty column
-      const col3 = pageWidth - margin - 14; // Rate (right aligned)
-      const col4 = pageWidth - margin - 14; // Amt (right aligned)
+
+      const col1 = margin; // Item
+      const col2 = margin + 36; // Qty (fixed position)
+      const rateText = "Rate";
+      const amtText = "Amt";
+      const col3 = pageWidth - margin - doc.getTextWidth(rateText); // Rate right-aligned
+      const col4 = pageWidth - margin - doc.getTextWidth(amtText); // Amt right-aligned
 
       doc.text("Item", col1, y);
       doc.text("Qty", col2, y);
-      doc.text("Rate", col3 - 2, y);
-      doc.text("Amt", col4, y, { align: "right" });
+      doc.text(rateText, col3, y);
+      doc.text(amtText, col4, y);
       y += 3.5;
 
-      // Items
+      // --- Items (right‑aligned numbers) ---
       doc.setFont("Courier", "normal");
       completedSale.items.forEach((item: any) => {
         const name =
-          item.productName.length > 20
+          item.productName && item.productName.length > 20
             ? item.productName.substring(0, 18) + ".."
-            : item.productName;
+            : item.productName || "Unknown";
+
         doc.text(name, col1, y);
-        doc.text(`${item.quantity}`, col2, y);
-        doc.text(`${item.sellingPrice.toFixed(0)}`, col3 - 2, y);
-        doc.text(`${item.total.toFixed(0)}`, col4, y, { align: "right" });
+        doc.text(`${item.quantity ?? 0}`, col2, y);
+
+        // Right‑align rate and total using getTextWidth
+        const rateStr = `${(item.sellingPrice ?? 0).toFixed(0)}`;
+        const amtStr = `${(item.total ?? 0).toFixed(0)}`;
+        const rateX = pageWidth - margin - doc.getTextWidth(rateStr);
+        const amtX = pageWidth - margin - doc.getTextWidth(amtStr);
+        doc.text(rateStr, rateX, y);
+        doc.text(amtStr, amtX, y);
         y += 3.5;
       });
 
       dashedLine();
 
-      // Totals
-      twoColumn("Subtotal:", completedSale.subtotal.toFixed(0), 9);
-      twoColumn("GST:", completedSale.totalGst.toFixed(0), 9);
-      if (completedSale.totalDiscount > 0) {
+      // --- Totals ---
+      twoColumn("Subtotal:", (completedSale.subtotal ?? 0).toFixed(0), 9);
+      twoColumn("GST:", (completedSale.totalGst ?? 0).toFixed(0), 9);
+      if ((completedSale.totalDiscount ?? 0) > 0) {
         twoColumn("Discount:", completedSale.totalDiscount.toFixed(0), 9);
       }
 
@@ -534,7 +536,7 @@ export default function POSPage() {
 
       doc.setFont("Courier", "bold");
       doc.setFontSize(11);
-      const totalStr = `TOTAL: ${completedSale.grandTotal.toFixed(0)}`;
+      const totalStr = `TOTAL: ${(completedSale.grandTotal ?? 0).toFixed(0)}`;
       doc.text(totalStr, margin, y);
 
       y += 6;
@@ -542,8 +544,8 @@ export default function POSPage() {
       // Payment details
       doc.setFont("Courier", "normal");
       doc.setFontSize(8);
-      twoColumn("Paid:", completedSale.paidAmount.toFixed(0), 8);
-      twoColumn("Due:", completedSale.dueAmount.toFixed(0), 8);
+      twoColumn("Paid:", (completedSale.paidAmount ?? 0).toFixed(0), 8);
+      twoColumn("Due:", (completedSale.dueAmount ?? 0).toFixed(0), 8);
 
       dashedLine();
 
@@ -560,24 +562,24 @@ export default function POSPage() {
       toast.success("PDF saved successfully", { id: toastId });
     } catch (error) {
       console.error("PDF Error:", error);
-      toast.error("Failed to save PDF", { id: toastId });
+      toast.error("Failed to save PDF – check console for details", {
+        id: toastId,
+      });
     }
   };
 
-  // ------------------------------------- customer creation -------------------------------------
+  // ---------- Customer creation ----------
   const handleNewCustomer = async () => {
     if (!newCustomer.name || !newCustomer.phone) {
       alert("Name and phone are required");
       return;
     }
-
     try {
       const response = await fetch("/api/customers", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(newCustomer),
       });
-
       if (response.ok) {
         const customer = await response.json();
         setSelectedCustomer(customer);
@@ -594,13 +596,14 @@ export default function POSPage() {
     }
   };
 
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat("en-IN", {
+  const formatCurrency = (amount: number) =>
+    new Intl.NumberFormat("en-IN", {
       style: "currency",
       currency: "INR",
       maximumFractionDigits: 0,
     }).format(amount);
-  };
+
+  // ---------- Render ----------
 
   // ------------------------------------- render -------------------------------------
   return (
