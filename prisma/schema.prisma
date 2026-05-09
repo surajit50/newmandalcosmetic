@@ -14,6 +14,48 @@ enum UserRole {
   STAFF
 }
 
+enum PaymentStatus {
+  PAID
+  PARTIAL
+  DUE
+}
+
+enum PaymentMode {
+  CASH
+  UPI
+  CARD
+  BANK
+}
+
+enum StockTransactionType {
+  IN
+  OUT
+  ADJUSTMENT
+  DAMAGE
+  RETURN
+}
+
+enum StockReferenceType {
+  PURCHASE
+  SALE
+  ADJUSTMENT
+  RETURN
+  DAMAGE
+}
+
+enum CashbookType {
+  INCOME
+  EXPENSE
+}
+
+enum CashbookReferenceType {
+  SALE
+  PURCHASE
+  EXPENSE
+  CUSTOMER_DUE
+  SUPPLIER_DUE
+}
+
 model User {
   id        String   @id @default(auto()) @map("_id") @db.ObjectId
   name      String
@@ -106,22 +148,22 @@ model Supplier {
 }
 
 model Purchase {
-  id            String         @id @default(auto()) @map("_id") @db.ObjectId
-  invoiceNumber String         @unique
-  supplierId    String         @db.ObjectId
-  supplier      Supplier       @relation(fields: [supplierId], references: [id])
+  id            String        @id @default(auto()) @map("_id") @db.ObjectId
+  invoiceNumber String        @unique
+  supplierId    String        @db.ObjectId
+  supplier      Supplier      @relation(fields: [supplierId], references: [id])
   items         PurchaseItem[]
   subtotal      Float
   totalGst      Float
   grandTotal    Float
   paidAmount    Float
   dueAmount     Float
-  paymentStatus String // PAID, PARTIAL, DUE
-  paymentMode   String? // CASH, UPI, CARD, BANK
+  paymentStatus PaymentStatus
+  paymentMode   PaymentMode?
   notes         String?
-  createdBy     String         @db.ObjectId
-  createdAt     DateTime       @default(now())
-  updatedAt     DateTime       @updatedAt
+  createdBy     String        @db.ObjectId
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
 }
 
 model PurchaseItem {
@@ -139,10 +181,10 @@ model PurchaseItem {
 }
 
 model Sale {
-  id            String     @id @default(auto()) @map("_id") @db.ObjectId
-  invoiceNumber String     @unique
-  customerId    String?    @db.ObjectId
-  customer      Customer?  @relation(fields: [customerId], references: [id])
+  id            String        @id @default(auto()) @map("_id") @db.ObjectId
+  invoiceNumber String        @unique
+  customerId    String?       @db.ObjectId
+  customer      Customer?     @relation(fields: [customerId], references: [id])
   customerName  String
   customerPhone String?
   items         SaleItem[]
@@ -152,18 +194,20 @@ model Sale {
   grandTotal    Float
   paidAmount    Float
   dueAmount     Float
-  paymentStatus String // PAID, PARTIAL, DUE
-  paymentMode   String // CASH, UPI, CARD, BANK
+  paymentStatus PaymentStatus
+  paymentMode   PaymentMode
   notes         String?
-  createdBy     String     @db.ObjectId
-  createdAt     DateTime   @default(now())
-  updatedAt     DateTime   @updatedAt
+  createdBy     String        @db.ObjectId
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
 }
 
 model SaleItem {
   id           String  @id @default(auto()) @map("_id") @db.ObjectId
   saleId       String  @db.ObjectId
+  sale         Sale    @relation(fields: [saleId], references: [id], onDelete: Cascade)
   productId    String  @db.ObjectId
+  product      Product @relation(fields: [productId], references: [id])
   productName  String
   quantity     Float
   mrp          Float
@@ -175,47 +219,47 @@ model SaleItem {
 }
 
 model StockTransaction {
-  id            String   @id @default(auto()) @map("_id") @db.ObjectId
-  productId     String   @db.ObjectId
-  product       Product  @relation(fields: [productId], references: [id])
+  id            String                @id @default(auto()) @map("_id") @db.ObjectId
+  productId     String                @db.ObjectId
+  product       Product               @relation(fields: [productId], references: [id])
   productName   String
-  type          String // IN, OUT, ADJUSTMENT, DAMAGE, RETURN
+  type          StockTransactionType
   quantity      Float
   previousStock Float
   newStock      Float
-  referenceType String? // PURCHASE, SALE, ADJUSTMENT, RETURN, DAMAGE
-  referenceId   String?  @db.ObjectId
+  referenceType StockReferenceType?
+  referenceId   String?               @db.ObjectId
   notes         String?
-  createdBy     String   @db.ObjectId
-  createdAt     DateTime @default(now())
+  createdBy     String                @db.ObjectId
+  createdAt     DateTime              @default(now())
 }
 
 model Expense {
-  id          String   @id @default(auto()) @map("_id") @db.ObjectId
-  category    String // Salary, Rent, Electricity, etc.
+  id          String      @id @default(auto()) @map("_id") @db.ObjectId
+  category    String
   amount      Float
-  date        DateTime @default(now())
+  date        DateTime    @default(now())
   description String?
-  paymentMode String // CASH, UPI, CARD, BANK
-  createdBy   String   @db.ObjectId
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  paymentMode PaymentMode
+  createdBy   String      @db.ObjectId
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
 }
 
 model Cashbook {
-  id              String   @id @default(auto()) @map("_id") @db.ObjectId
-  type            String // INCOME, EXPENSE
+  id              String                 @id @default(auto()) @map("_id") @db.ObjectId
+  type            CashbookType
   category        String?
   amount          Float
   previousBalance Float
   newBalance      Float
-  paymentMode     String // CASH, UPI, CARD, BANK
-  referenceType   String? // SALE, PURCHASE, EXPENSE, CUSTOMER_DUE, SUPPLIER_DUE
-  referenceId     String?  @db.ObjectId
+  paymentMode     PaymentMode
+  referenceType   CashbookReferenceType?
+  referenceId     String?                @db.ObjectId
   description     String?
-  date            DateTime @default(now())
-  createdBy       String   @db.ObjectId
-  createdAt       DateTime @default(now())
+  date            DateTime               @default(now())
+  createdBy       String                 @db.ObjectId
+  createdAt       DateTime               @default(now())
 }
 
 model Settings {
