@@ -122,6 +122,22 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // Map payment mode to enum
+    const paymentModeMap: { [key: string]: 'CASH' | 'UPI' | 'CARD' | 'BANK' } = {
+      'CASH': 'CASH',
+      'UPI': 'UPI',
+      'CARD': 'CARD',
+      'BANK': 'BANK',
+    }
+    const paymentMode = paymentModeMap[body.paymentMode] || 'CASH'
+
+    // Determine payment status
+    const getPaymentStatus = (dueAmount: number, paidAmount: number) => {
+      if (dueAmount <= 0) return 'PAID'
+      if (paidAmount > 0) return 'PARTIAL'
+      return 'DUE'
+    }
+
     // CREATE SALE
     const sale = await prisma.sale.create({
       data: {
@@ -143,15 +159,9 @@ export async function POST(request: NextRequest) {
         paidAmount,
         dueAmount,
 
-        paymentStatus:
-          dueAmount <= 0
-            ? 'PAID'
-            : paidAmount > 0
-            ? 'PARTIAL'
-            : 'DUE',
+        paymentStatus: getPaymentStatus(dueAmount, paidAmount) as 'PAID' | 'PARTIAL' | 'DUE',
 
-        paymentMode:
-          body.paymentMode || 'CASH',
+        paymentMode,
 
         notes: body.notes || '',
 
@@ -257,8 +267,7 @@ export async function POST(request: NextRequest) {
           previousBalance,
           newBalance:
             previousBalance + paidAmount,
-          paymentMode:
-            body.paymentMode || 'CASH',
+          paymentMode,
           referenceType: 'SALE',
           referenceId: sale.id,
           description: `Sale: ${invoiceNumber}`,
