@@ -269,15 +269,18 @@ export default function POSPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          items: cart.map((item) => ({
-            productId: item.productId,
-            productName: item.productName,
-            quantity: item.quantity,
-            sellingPrice: item.sellingPrice,   // inclusive
-            discount: item.discount,
-            gstRate: item.gstRate,
-            gstAmount: item.gstAmount,        // per unit
-          })),
+        
+            items: cart.map((item) => ({
+  productId: item.productId,
+  productName: item.productName,
+  quantity: item.quantity,
+  mrp: item.mrp,
+  sellingPrice: item.sellingPrice,
+  discount: item.discount,
+  gstRate: item.gstRate,
+  gstAmount: item.gstAmount,
+}))// per unit
+          ,
           customerId: selectedCustomer?.id,
           customerName: selectedCustomer?.name || "Walk-in Customer",
           customerPhone: selectedCustomer?.phone,
