@@ -163,9 +163,7 @@ model Sale {
 model SaleItem {
   id           String  @id @default(auto()) @map("_id") @db.ObjectId
   saleId       String  @db.ObjectId
-  sale         Sale    @relation(fields: [saleId], references: [id])
   productId    String  @db.ObjectId
-  product      Product @relation(fields: [productId], references: [id])
   productName  String
   quantity     Float
   mrp          Float
