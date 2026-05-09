@@ -183,8 +183,8 @@ export async function POST(request: NextRequest) {
 
       return sale
     }, {
-      maxWait: 10000, // Wait up to 10s for connection
-      timeout: 20000, // Allow up to 20s for transaction execution
+      maxWait: 15000, // Wait up to 15s for connection
+      timeout: 20000, // Allow up to 25s for transaction execution
     })
 
     return NextResponse.json(result)
