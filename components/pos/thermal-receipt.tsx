@@ -1,29 +1,28 @@
-'use client'
-
-import { format } from 'date-fns'
-
+// components/pos/thermal-receipt.tsx
 interface ReceiptItem {
-  productName: string
-  quantity: number
-  sellingPrice: number
-  total: number
+  productName: string;
+  quantity: number;
+  sellingPrice: number;
+  discount: number;
+  gstRate: number;
+  total: number; // line total after discount (sellingPrice * quantity – discount)
 }
 
-interface ReceiptProps {
-  shopName: string
-  address: string
-  phone: string
-  gstin?: string
-  invoiceNumber: string
-  date: Date
-  customerName: string
-  items: ReceiptItem[]
-  subtotal: number
-  totalGst: number
-  totalDiscount: number
-  grandTotal: number
-  paidAmount: number
-  dueAmount: number
+interface ThermalReceiptProps {
+  shopName: string;
+  address?: string;
+  phone?: string;
+  gstin?: string;
+  invoiceNumber: string;
+  date: Date;
+  customerName?: string;
+  items: ReceiptItem[];
+  subtotal: number;
+  totalGst: number;
+  totalDiscount: number;
+  grandTotal: number;
+  paidAmount: number;
+  dueAmount: number;
 }
 
 export function ThermalReceipt({
@@ -41,86 +40,119 @@ export function ThermalReceipt({
   grandTotal,
   paidAmount,
   dueAmount,
-}: ReceiptProps) {
+}: ThermalReceiptProps) {
+  const currency = (val: number) =>
+    new Intl.NumberFormat("en-IN", {
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 0,
+    }).format(val);
+
+  const dateStr = date.toLocaleString("en-IN", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+
+  const changeAmount = paidAmount - grandTotal;
+
   return (
-    <div className="w-[80mm] p-2 bg-white text-black font-mono text-[10px] leading-tight">
-      <div className="text-center space-y-1 mb-2">
-        <h1 className="text-[14px] font-bold uppercase">{shopName}</h1>
-        <p className="whitespace-pre-line">{address}</p>
-        <p>Ph: {phone}</p>
-        {gstin && <p>GSTIN: {gstin}</p>}
-      </div>
+    <div className="receipt">
+      {/* Shop Header */}
+      <div className="center bold">{shopName.toUpperCase()}</div>
+      {address && <div className="center">{address}</div>}
+      {phone && <div className="center">Ph: {phone}</div>}
+      {gstin && <div className="center">GSTIN: {gstin}</div>}
 
-      <div className="border-t border-b border-black border-dashed py-1 my-1">
-        <div className="flex justify-between">
-          <span>Inv: {invoiceNumber}</span>
-          <span>{format(date, 'dd/MM/yy HH:mm')}</span>
-        </div>
-        <div>Customer: {customerName}</div>
-      </div>
+      <div className="line" />
 
-      <table className="w-full my-2">
+      {/* Invoice Details */}
+      <div style={{ display: "flex", justifyContent: "space-between" }}>
+        <span>Invoice: {invoiceNumber}</span>
+        <span>{dateStr}</span>
+      </div>
+      <div>Customer: {customerName || "Walk-in"}</div>
+
+      <div className="line" />
+
+      {/* Item Table */}
+      <table>
         <thead>
-          <tr className="border-b border-black border-dashed">
-            <th className="text-left font-normal py-1">Item</th>
-            <th className="text-right font-normal py-1">Qty</th>
-            <th className="text-right font-normal py-1">Rate</th>
-            <th className="text-right font-normal py-1">Total</th>
+          <tr>
+            <th style={{ textAlign: "left" }}>Item</th>
+            <th style={{ textAlign: "right", width: "10mm" }}>Qty</th>
+            <th style={{ textAlign: "right", width: "14mm" }}>Rate</th>
+            <th style={{ textAlign: "right", width: "12mm" }}>Disc</th>
+            <th style={{ textAlign: "right", width: "16mm" }}>Amount</th>
           </tr>
         </thead>
         <tbody>
           {items.map((item, idx) => (
             <tr key={idx}>
-              <td className="py-1">{item.productName}</td>
-              <td className="text-right py-1">{item.quantity}</td>
-              <td className="text-right py-1">{item.sellingPrice.toFixed(0)}</td>
-              <td className="text-right py-1">{item.total.toFixed(0)}</td>
+              <td>{item.productName}</td>
+              <td className="right">{item.quantity}</td>
+              <td className="right">{currency(item.sellingPrice)}</td>
+              <td className="right">{item.discount > 0 ? currency(item.discount) : "-"}</td>
+              <td className="right">{currency(item.total)}</td>
             </tr>
           ))}
         </tbody>
       </table>
 
-      <div className="border-t border-black border-dashed pt-1 space-y-0.5">
-        <div className="flex justify-between">
-          <span>Subtotal:</span>
-          <span>{subtotal.toFixed(2)}</span>
+      <div className="line" />
+
+      {/* Totals */}
+      <div style={{ display: "flex", justifyContent: "space-between" }}>
+        <span>Subtotal</span>
+        <span>{currency(subtotal)}</span>
+      </div>
+      {totalDiscount > 0 && (
+        <div style={{ display: "flex", justifyContent: "space-between" }}>
+          <span>Discount</span>
+          <span>-{currency(totalDiscount)}</span>
         </div>
-        {totalGst > 0 && (
-          <div className="flex justify-between">
-            <span>GST:</span>
-            <span>{totalGst.toFixed(2)}</span>
-          </div>
-        )}
-        {totalDiscount > 0 && (
-          <div className="flex justify-between">
-            <span>Discount:</span>
-            <span>-{totalDiscount.toFixed(2)}</span>
-          </div>
-        )}
-        <div className="flex justify-between font-bold text-[12px] border-t border-black border-double pt-1">
-          <span>GRAND TOTAL:</span>
-          <span>₹{grandTotal.toFixed(2)}</span>
-        </div>
+      )}
+      <div style={{ display: "flex", justifyContent: "space-between" }}>
+        <span>Taxable</span>
+        <span>{currency(subtotal - totalDiscount)}</span>
+      </div>
+      <div style={{ display: "flex", justifyContent: "space-between" }}>
+        <span>GST</span>
+        <span>{currency(totalGst)}</span>
       </div>
 
-      <div className="mt-2 space-y-0.5">
-        <div className="flex justify-between">
-          <span>Paid:</span>
-          <span>{paidAmount.toFixed(2)}</span>
-        </div>
-        <div className="flex justify-between">
-          <span>Balance Due:</span>
-          <span>{dueAmount.toFixed(2)}</span>
-        </div>
+      <div className="line" />
+
+      <div
+        className="bold total"
+        style={{ display: "flex", justifyContent: "space-between" }}
+      >
+        <span>GRAND TOTAL</span>
+        <span>₹ {currency(grandTotal)}</span>
       </div>
 
-      <div className="text-center mt-4 space-y-1">
-        <p className="font-bold">THANK YOU!</p>
-        <p>Please come again.</p>
-        <div className="pt-2 border-t border-black border-dashed">
-          <p className="text-[8px]">Software by New Mandal Cosmetic ERP</p>
-        </div>
+      <div className="line" />
+
+      <div style={{ display: "flex", justifyContent: "space-between" }}>
+        <span>Paid</span>
+        <span>{currency(paidAmount)}</span>
       </div>
+      <div style={{ display: "flex", justifyContent: "space-between" }}>
+        <span>Due</span>
+        <span>{currency(dueAmount)}</span>
+      </div>
+      {changeAmount > 0 && (
+        <div style={{ display: "flex", justifyContent: "space-between" }}>
+          <span>Change</span>
+          <span>{currency(changeAmount)}</span>
+        </div>
+      )}
+
+      <div className="line" />
+      <div className="center">Thank you for your purchase!</div>
+      <div className="center">Visit again</div>
+      <div className="line" />
     </div>
-  )
+  );
 }
