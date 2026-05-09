@@ -35,11 +35,14 @@ import {
   Printer,
   Package,
   IndianRupee,
+  Download,
 } from "lucide-react";
 import { ThermalReceipt } from "@/components/pos/thermal-receipt";
 import ReactDOMServer from "react-dom/server";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
+import jsPDF from "jspdf";
+import html2canvas from "html2canvas";
 
 interface Product {
   id: string;
@@ -382,6 +385,78 @@ export default function POSPage() {
       </html>
     `);
     doc.close();
+  };
+
+  const handleSavePDF = async () => {
+    if (!completedSale || !shopSettings) return;
+
+    const toastId = toast.loading("Generating PDF...");
+
+    try {
+      const receiptElement = document.createElement("div");
+      receiptElement.style.position = "absolute";
+      receiptElement.style.left = "-9999px";
+      receiptElement.style.top = "0";
+      receiptElement.style.width = "80mm";
+      receiptElement.style.background = "white";
+      document.body.appendChild(receiptElement);
+
+      const receiptHtml = ReactDOMServer.renderToString(
+        <ThermalReceipt
+          shopName={shopSettings.shopName}
+          address={shopSettings.address}
+          phone={shopSettings.phone}
+          gstin={shopSettings.gstin}
+          invoiceNumber={completedSale.invoiceNumber}
+          date={new Date(completedSale.createdAt)}
+          customerName={completedSale.customerName}
+          items={completedSale.items}
+          subtotal={completedSale.subtotal}
+          totalGst={completedSale.totalGst}
+          totalDiscount={completedSale.totalDiscount}
+          grandTotal={completedSale.grandTotal}
+          paidAmount={completedSale.paidAmount}
+          dueAmount={completedSale.dueAmount}
+        />,
+      );
+
+      receiptElement.innerHTML = `
+        <div style="width: 80mm; padding: 10px; font-family: monospace;">
+          ${receiptHtml}
+        </div>
+      `;
+
+      const canvas = await html2canvas(receiptElement, {
+        scale: 3,
+        useCORS: true,
+        logging: false,
+        backgroundColor: "#ffffff",
+      });
+
+      const imgData = canvas.toDataURL("image/png");
+      const pdf = new jsPDF({
+        unit: "mm",
+        format: [80, (canvas.height * 80) / canvas.width],
+      });
+
+      pdf.addImage(
+        imgData,
+        "PNG",
+        0,
+        0,
+        80,
+        (canvas.height * 80) / canvas.width,
+        undefined,
+        "FAST",
+      );
+      pdf.save(`Invoice-${completedSale.invoiceNumber}.pdf`);
+
+      document.body.removeChild(receiptElement);
+      toast.success("PDF saved successfully", { id: toastId });
+    } catch (error) {
+      console.error("PDF Error:", error);
+      toast.error("Failed to save PDF", { id: toastId });
+    }
   };
 
   const handleNewCustomer = async () => {
@@ -800,17 +875,27 @@ export default function POSPage() {
             <div className="text-3xl font-bold text-primary">
               {formatCurrency(completedSale?.grandTotal || 0)}
             </div>
-            <div className="flex gap-3 w-full pt-4">
+            <div className="flex flex-col gap-2 w-full pt-4">
+              <div className="flex gap-2 w-full">
+                <Button
+                  variant="outline"
+                  className="flex-1"
+                  onClick={() => setShowSuccess(false)}
+                >
+                  New Sale
+                </Button>
+                <Button className="flex-1" onClick={handlePrint}>
+                  <Printer className="w-4 h-4 mr-2" />
+                  Print
+                </Button>
+              </div>
               <Button
-                variant="outline"
-                className="flex-1"
-                onClick={() => setShowSuccess(false)}
+                variant="secondary"
+                className="w-full bg-blue-600 hover:bg-blue-700 text-white"
+                onClick={handleSavePDF}
               >
-                New Sale
-              </Button>
-              <Button className="flex-1" onClick={handlePrint}>
-                <Printer className="w-4 h-4 mr-2" />
-                Print Bill
+                <Download className="w-4 h-4 mr-2" />
+                Save as PDF
               </Button>
             </div>
           </div>

@@ -36,6 +36,9 @@ import {
 } from "lucide-react";
 import { ThermalReceipt } from "@/components/pos/thermal-receipt";
 import ReactDOMServer from "react-dom/server";
+import { toast } from "sonner";
+import jsPDF from "jspdf";
+import html2canvas from "html2canvas";
 
 interface Sale {
   id: string;
@@ -70,7 +73,7 @@ interface PurchasesSummary {
 }
 
 interface Purchase {
-  _id: string;
+  id: string | null | undefined;
   invoiceNumber: string;
   supplierName: string;
   grandTotal: number;
@@ -248,6 +251,78 @@ export default function ReportsPage() {
       </html>
     `);
     printWindow.document.close();
+  };
+
+  const handleSavePDF = async (sale: Sale) => {
+    if (!shopSettings) return;
+
+    const toastId = toast.loading("Generating PDF...");
+
+    try {
+      const receiptElement = document.createElement("div");
+      receiptElement.style.position = "absolute";
+      receiptElement.style.left = "-9999px";
+      receiptElement.style.top = "0";
+      receiptElement.style.width = "80mm";
+      receiptElement.style.background = "white";
+      document.body.appendChild(receiptElement);
+
+      const receiptHtml = ReactDOMServer.renderToString(
+        <ThermalReceipt
+          shopName={shopSettings.shopName}
+          address={shopSettings.address}
+          phone={shopSettings.phone}
+          gstin={shopSettings.gstin}
+          invoiceNumber={sale.invoiceNumber}
+          date={new Date(sale.createdAt)}
+          customerName={sale.customerName}
+          items={sale.items}
+          subtotal={sale.subtotal}
+          totalGst={sale.totalGst}
+          totalDiscount={sale.totalDiscount}
+          grandTotal={sale.grandTotal}
+          paidAmount={sale.paidAmount}
+          dueAmount={sale.dueAmount}
+        />,
+      );
+
+      receiptElement.innerHTML = `
+        <div style="width: 80mm; padding: 10px; font-family: monospace;">
+          ${receiptHtml}
+        </div>
+      `;
+
+      const canvas = await html2canvas(receiptElement, {
+        scale: 3,
+        useCORS: true,
+        logging: false,
+        backgroundColor: "#ffffff",
+      });
+
+      const imgData = canvas.toDataURL("image/png");
+      const pdf = new jsPDF({
+        unit: "mm",
+        format: [80, (canvas.height * 80) / canvas.width],
+      });
+
+      pdf.addImage(
+        imgData,
+        "PNG",
+        0,
+        0,
+        80,
+        (canvas.height * 80) / canvas.width,
+        undefined,
+        "FAST",
+      );
+      pdf.save(`Invoice-${sale.invoiceNumber}.pdf`);
+
+      document.body.removeChild(receiptElement);
+      toast.success("PDF saved successfully", { id: toastId });
+    } catch (error) {
+      console.error("PDF Error:", error);
+      toast.error("Failed to save PDF", { id: toastId });
+    }
   };
 
   return (
@@ -484,14 +559,25 @@ export default function ReportsPage() {
                           </Badge>
                         </TableCell>
                         <TableCell className="text-right">
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => handlePrint(sale)}
-                            title="Reprint Invoice"
-                          >
-                            <Printer className="w-4 h-4" />
-                          </Button>
+                          <div className="flex justify-end gap-1">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => handlePrint(sale)}
+                              title="Reprint Invoice"
+                            >
+                              <Printer className="w-4 h-4" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="text-blue-600 hover:text-blue-700 hover:bg-blue-50"
+                              onClick={() => handleSavePDF(sale)}
+                              title="Save as PDF"
+                            >
+                              <Download className="w-4 h-4" />
+                            </Button>
+                          </div>
                         </TableCell>
                       </TableRow>
                     ))}
