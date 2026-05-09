@@ -297,7 +297,7 @@ export async function generatePDF({
     doc.text("TOTAL", margin, y);
 
     doc.text(
-      "₹ " +
+      
         formatNumber(completedSale.grandTotal),
       76,
       y,
