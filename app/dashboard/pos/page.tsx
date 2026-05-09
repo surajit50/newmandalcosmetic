@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useRef, useCallback } from "react";
+import { useEffect, useState, useRef, useCallback, useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -43,13 +43,13 @@ import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import jsPDF from "jspdf";
 
-// ---------- Types (unchanged except CartItem adjustments) ----------
+// ---------- Types ----------
 interface Product {
   id: string;
   name: string;
   barcode?: string;
   mrp: number;
-  sellingPrice: number; // now always inclusive of GST
+  sellingPrice: number; // always inclusive of GST
   gstRate: number;
   currentStock: number;
   unit: string;
@@ -62,8 +62,8 @@ interface CartItem {
   mrp: number;
   sellingPrice: number;   // inclusive per unit
   discount: number;       // fixed discount on this line (in ₹)
-  gstRate: number;
-  gstAmount: number;      // GST amount per unit (derived from inclusive price)
+  gstRate: number;        // GST rate (e.g., 18 for 18%)
+  // gstAmount removed from state – computed on the fly
 }
 
 interface Customer {
@@ -141,12 +141,12 @@ export default function POSPage() {
   const fetchSettings = async () => {
     try {
       const response = await fetch("/api/settings");
-      if (response.ok) {
-        const data = await response.json();
-        setShopSettings(data);
-      }
+      if (!response.ok) throw new Error("Failed to load settings");
+      const data = await response.json();
+      setShopSettings(data);
     } catch (error) {
       console.error("Failed to fetch settings:", error);
+      toast.error("Could not load shop settings");
     }
   };
 
@@ -178,7 +178,7 @@ export default function POSPage() {
     }
   }, [searchQuery, products]);
 
-  // ---------- Cart Functions (GST-inclusive) ----------
+  // ---------- Cart Functions (GST-inclusive, discount-aware) ----------
   const addToCart = (product: Product) => {
     if (product.currentStock <= 0) {
       alert("Product is out of stock");
@@ -193,11 +193,7 @@ export default function POSPage() {
       }
       updateQuantity(product.id, existingItem.quantity + 1);
     } else {
-      // --- GST inclusive selling price ---
-      const sellingPrice = product.sellingPrice;                    // inclusive
-      const basePrice = sellingPrice / (1 + product.gstRate / 100); // taxable value
-      const gstAmount = sellingPrice - basePrice;                   // GST per unit
-
+      // No gstAmount stored – will be computed dynamically
       setCart([
         ...cart,
         {
@@ -205,10 +201,9 @@ export default function POSPage() {
           productName: product.name,
           quantity: 1,
           mrp: product.mrp,
-          sellingPrice,
+          sellingPrice: product.sellingPrice,
           discount: 0,
           gstRate: product.gstRate,
-          gstAmount,
         },
       ]);
     }
@@ -243,23 +238,64 @@ export default function POSPage() {
     setCart(cart.filter((item) => item.productId !== productId));
   };
 
-  // ---------- Totals (with discount) ----------
-  const subtotal = cart.reduce(
-    (sum, item) => sum + item.sellingPrice * item.quantity,
-    0,
-  );
-  const totalDiscount = cart.reduce((sum, item) => sum + item.discount, 0);
-  const totalGst = cart.reduce(
-    (sum, item) => sum + item.gstAmount * item.quantity,
-    0,
-  );
-  const grandTotal = subtotal - totalDiscount;
-  const dueAmount = grandTotal - (parseFloat(paidAmount) || 0);
+  // ---------- Discount change handler (with validation) ----------
+  const handleDiscountChange = (productId: string, rawValue: string) => {
+    const val = parseFloat(rawValue) || 0;
+    const item = cart.find(i => i.productId === productId);
+    if (!item) return;
+    const maxDiscount = item.sellingPrice * item.quantity;
+    const finalDiscount = Math.min(val, maxDiscount);
+
+    setCart(prev =>
+      prev.map(i =>
+        i.productId === productId ? { ...i, discount: finalDiscount } : i
+      )
+    );
+  };
+
+  // ---------- Computed totals with dynamic GST ----------
+  const { subtotal, totalDiscount, totalGst, grandTotal, lineGstMap } = useMemo(() => {
+    const map: Record<string, number> = {};
+    let sub = 0;
+    let disc = 0;
+    let gst = 0;
+
+    cart.forEach(item => {
+      const lineTotal = item.sellingPrice * item.quantity;
+      const lineInclusive = lineTotal - item.discount;
+      const taxable = lineInclusive / (1 + item.gstRate / 100);
+      const lineGst = lineInclusive - taxable;
+
+      map[item.productId] = lineGst;
+
+      sub += lineTotal;
+      disc += item.discount;
+      gst += lineGst;
+    });
+
+    const grand = sub - disc;
+
+    return {
+      subtotal: sub,
+      totalDiscount: disc,
+      totalGst: gst,
+      grandTotal: grand,
+      lineGstMap: map
+    };
+  }, [cart]);
+
+  const paidAmountNum = parseFloat(paidAmount) || 0;
+  const dueAmount = grandTotal - paidAmountNum;
+  const isOverpaid = paidAmountNum > grandTotal && grandTotal > 0;
 
   // ---------- Checkout ----------
   const handleCheckout = async () => {
     if (cart.length === 0) {
       alert("Cart is empty");
+      return;
+    }
+    if (isOverpaid) {
+      alert("Paid amount exceeds the total. Please adjust the payment.");
       return;
     }
 
@@ -269,28 +305,23 @@ export default function POSPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-  items: cart.map((item) => ({
-    productId: item.productId,
-    productName: item.productName,
-    quantity: item.quantity,
-    mrp: item.mrp,
-    sellingPrice: item.sellingPrice,
-    discount: item.discount,
-    gstRate: item.gstRate,
-    gstAmount: item.gstAmount,
-  })),
-
-  customerId: selectedCustomer?.id || null,
-  customerName:
-    selectedCustomer?.name || "Walk-in Customer",
-  customerPhone:
-    selectedCustomer?.phone || null,
-
-  paymentMode,
-
-  paidAmount:
-    paidAmount || grandTotal.toString(),
-}),
+          items: cart.map((item) => ({
+            productId: item.productId,
+            productName: item.productName,
+            quantity: item.quantity,
+            mrp: item.mrp,
+            sellingPrice: item.sellingPrice,
+            discount: item.discount,
+            gstRate: item.gstRate,
+            // No gstAmount – backend recalculates correctly
+          })),
+          customerId: selectedCustomer?.id || null,
+          customerName: selectedCustomer?.name || "Walk-in Customer",
+          customerPhone: selectedCustomer?.phone || null,
+          paymentMode,
+          paidAmount: paidAmount || grandTotal.toString(),
+        }),
+      });
 
       if (response.ok) {
         const sale = await response.json();
@@ -312,7 +343,7 @@ export default function POSPage() {
     }
   };
 
-  // ---------- Print (unchanged) ----------
+  // ---------- Print ----------
   const handlePrint = () => {
     if (!completedSale || !shopSettings || !printFrameRef.current) return;
 
@@ -368,7 +399,7 @@ export default function POSPage() {
     doc.close();
   };
 
-  // ---------- PDF Generation (unchanged, uses completedSale data) ----------
+  // ---------- PDF Generation ----------
   const handleSavePDF = async () => {
     if (!completedSale || !shopSettings) {
       toast.error("No sale data available");
@@ -503,7 +534,7 @@ export default function POSPage() {
   // ---------- Render ----------
   return (
     <div className="h-screen flex flex-col overflow-hidden bg-background">
-      {/* Header */}
+      {/* Header – unchanged */}
       <div className="px-4 py-2 border-b border-border bg-card/50 backdrop-blur-xl sticky top-0 z-20 flex items-center justify-between shadow-sm">
         <div className="flex items-center gap-2">
           <div className="w-8 h-8 rounded-lg bg-primary/20 flex items-center justify-center border border-primary/20">
@@ -569,7 +600,7 @@ export default function POSPage() {
       </div>
 
       <div className="flex-1 flex flex-col md:flex-row overflow-hidden">
-        {/* Product Search & List */}
+        {/* Product Search & List – unchanged */}
         <div className="flex-1 flex flex-col p-3 sm:p-4 overflow-hidden border-r border-border/50">
           <div className="relative mb-3 group">
             <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground group-focus-within:text-primary transition-colors" />
@@ -668,64 +699,65 @@ export default function POSPage() {
               </div>
             ) : (
               <div className="p-2 space-y-2">
-                {cart.map((item) => (
-                  <div
-                    key={item.productId}
-                    className="p-1.5 sm:p-2 rounded-xl bg-card border border-border/50 shadow-sm animate-in slide-in-from-right duration-300 group/item relative"
-                  >
-                    <div className="flex justify-between items-start gap-2 mb-1">
-                      <div className="flex flex-col pr-6">
-                        <span className="font-bold text-[10px] sm:text-[11px] leading-tight text-foreground line-clamp-1">{item.productName}</span>
-                        <span className="text-[7px] sm:text-[8px] text-muted-foreground font-bold uppercase tracking-widest mt-0.5">GST {item.gstRate}%</span>
-                      </div>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-5 w-5 sm:h-6 sm:w-6 rounded-full text-destructive hover:bg-destructive/10 shrink-0 absolute top-1 right-1 opacity-100 sm:opacity-0 group-hover/item:opacity-100 transition-opacity"
-                        onClick={() => removeFromCart(item.productId)}
-                      >
-                        <Trash2 className="w-2.5 sm:w-3 h-2.5 sm:h-3" />
-                      </Button>
-                    </div>
-
-                    {/* Quantity controls + Discount input */}
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-1 bg-secondary/50 rounded-full p-0.5 border border-border/50">
-                        <Button variant="ghost" size="icon" className="h-5 w-5 sm:h-6 sm:w-6 rounded-full hover:bg-background" onClick={() => updateQuantity(item.productId, item.quantity - 1)}>
-                          <Minus className="w-2 sm:w-2.5 h-2 sm:h-2.5" />
-                        </Button>
-                        <span className="w-5 sm:w-6 text-center text-[10px] sm:text-[11px] font-black text-foreground">{item.quantity}</span>
-                        <Button variant="ghost" size="icon" className="h-5 w-5 sm:h-6 sm:w-6 rounded-full hover:bg-background" onClick={() => updateQuantity(item.productId, item.quantity + 1)}>
-                          <Plus className="w-2 sm:w-2.5 h-2 sm:h-2.5" />
+                {cart.map((item) => {
+                  const lineGst = lineGstMap[item.productId] || 0;
+                  return (
+                    <div
+                      key={item.productId}
+                      className="p-1.5 sm:p-2 rounded-xl bg-card border border-border/50 shadow-sm animate-in slide-in-from-right duration-300 group/item relative"
+                    >
+                      <div className="flex justify-between items-start gap-2 mb-1">
+                        <div className="flex flex-col pr-6">
+                          <span className="font-bold text-[10px] sm:text-[11px] leading-tight text-foreground line-clamp-1">{item.productName}</span>
+                          <span className="text-[7px] sm:text-[8px] text-muted-foreground font-bold uppercase tracking-widest mt-0.5">
+                            GST {item.gstRate}% · {formatCurrency(lineGst)}
+                          </span>
+                        </div>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-5 w-5 sm:h-6 sm:w-6 rounded-full text-destructive hover:bg-destructive/10 shrink-0 absolute top-1 right-1 opacity-100 sm:opacity-0 group-hover/item:opacity-100 transition-opacity"
+                          onClick={() => removeFromCart(item.productId)}
+                        >
+                          <Trash2 className="w-2.5 sm:w-3 h-2.5 sm:h-3" />
                         </Button>
                       </div>
 
-                      {/* ---- Discount field ---- */}
-                      <div className="flex items-center gap-1">
-                        <Input
-                          type="number"
-                          placeholder="0"
-                          value={item.discount || ""}
-                          onChange={(e) => {
-                            const val = parseFloat(e.target.value) || 0;
-                            setCart(cart.map((i) => (i.productId === item.productId ? { ...i, discount: val } : i)));
-                          }}
-                          className="w-12 h-6 text-xs p-1 text-right rounded"
-                        />
-                        <span className="text-[8px] font-bold text-muted-foreground">disc</span>
-                      </div>
-
-                      <div className="text-right">
-                        <div className="font-black text-xs sm:text-sm text-primary">
-                          {formatCurrency(item.sellingPrice * item.quantity - item.discount)}
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-1 bg-secondary/50 rounded-full p-0.5 border border-border/50">
+                          <Button variant="ghost" size="icon" className="h-5 w-5 sm:h-6 sm:w-6 rounded-full hover:bg-background" onClick={() => updateQuantity(item.productId, item.quantity - 1)}>
+                            <Minus className="w-2 sm:w-2.5 h-2 sm:h-2.5" />
+                          </Button>
+                          <span className="w-5 sm:w-6 text-center text-[10px] sm:text-[11px] font-black text-foreground">{item.quantity}</span>
+                          <Button variant="ghost" size="icon" className="h-5 w-5 sm:h-6 sm:w-6 rounded-full hover:bg-background" onClick={() => updateQuantity(item.productId, item.quantity + 1)}>
+                            <Plus className="w-2 sm:w-2.5 h-2 sm:h-2.5" />
+                          </Button>
                         </div>
-                        <div className="text-[8px] sm:text-[9px] text-muted-foreground font-bold">
-                          {formatCurrency(item.sellingPrice)}/u (incl. GST)
+
+                        {/* Discount field – validated */}
+                        <div className="flex items-center gap-1">
+                          <Input
+                            type="number"
+                            placeholder="0"
+                            value={item.discount || ""}
+                            onChange={(e) => handleDiscountChange(item.productId, e.target.value)}
+                            className="w-12 h-6 text-xs p-1 text-right rounded"
+                          />
+                          <span className="text-[8px] font-bold text-muted-foreground">disc</span>
+                        </div>
+
+                        <div className="text-right">
+                          <div className="font-black text-xs sm:text-sm text-primary">
+                            {formatCurrency(item.sellingPrice * item.quantity - item.discount)}
+                          </div>
+                          <div className="text-[8px] sm:text-[9px] text-muted-foreground font-bold">
+                            {formatCurrency(item.sellingPrice)}/u (incl. GST)
+                          </div>
                         </div>
                       </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>
@@ -777,7 +809,14 @@ export default function POSPage() {
               <div className="flex items-center justify-between px-1">
                 <span className="text-[9px] font-black uppercase text-muted-foreground">Paid Amount</span>
                 {dueAmount > 0 && (
-                  <span className="text-[9px] font-black text-destructive uppercase animate-pulse">Due: {formatCurrency(dueAmount)}</span>
+                  <span className="text-[9px] font-black text-destructive uppercase animate-pulse">
+                    Due: {formatCurrency(dueAmount)}
+                  </span>
+                )}
+                {isOverpaid && (
+                  <span className="text-[9px] font-black text-amber-600 uppercase">
+                    Overpay {formatCurrency(paidAmountNum - grandTotal)}
+                  </span>
                 )}
               </div>
               <div className="relative">
@@ -787,14 +826,22 @@ export default function POSPage() {
                   placeholder={grandTotal.toFixed(0)}
                   value={paidAmount}
                   onChange={(e) => setPaidAmount(e.target.value)}
-                  className="pl-9 h-10 text-lg font-black rounded-xl bg-secondary/30 border-border/50 focus:bg-background transition-all"
+                  className={cn(
+                    "pl-9 h-10 text-lg font-black rounded-xl bg-secondary/30 border-border/50 focus:bg-background transition-all",
+                    isOverpaid && "border-amber-500 focus:ring-amber-500"
+                  )}
                 />
               </div>
+              {isOverpaid && (
+                <p className="text-[10px] text-amber-600 font-medium">
+                  Paid amount exceeds the total. Please adjust.
+                </p>
+              )}
             </div>
 
             <Button
               className="w-full h-12 text-sm font-black rounded-xl shadow-xl shadow-primary/20 transition-all hover:scale-[1.02] active:scale-[0.98] group"
-              disabled={cart.length === 0 || isProcessing}
+              disabled={cart.length === 0 || isProcessing || isOverpaid}
               onClick={handleCheckout}
             >
               {isProcessing ? (
@@ -808,7 +855,7 @@ export default function POSPage() {
         </div>
       </div>
 
-      {/* Success Dialog */}
+      {/* Success Dialog – unchanged */}
       <Dialog open={showSuccess} onOpenChange={setShowSuccess}>
         <DialogContent className="sm:max-w-md text-center">
           <div className="flex flex-col items-center space-y-4 py-4">
@@ -831,7 +878,7 @@ export default function POSPage() {
         </DialogContent>
       </Dialog>
 
-      {/* New Customer Dialog */}
+      {/* New Customer Dialog – unchanged */}
       <Dialog open={showCustomerDialog} onOpenChange={setShowCustomerDialog}>
         <DialogContent>
           <DialogHeader>
