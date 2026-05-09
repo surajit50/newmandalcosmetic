@@ -4,101 +4,177 @@ import { authOptions } from '@/lib/auth'
 import prisma from '@/lib/prisma'
 import { generateInvoiceNumber } from '@/lib/types'
 
-export async function GET(request: NextRequest) {
-  const session = await getServerSession(authOptions)
-  if (!session) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
-
-  try {
-    const searchParams = request.nextUrl.searchParams
-    const startDate = searchParams.get('startDate')
-    const endDate = searchParams.get('endDate')
-    const customerId = searchParams.get('customerId')
-    
-    const where: any = {}
-    
-    if (startDate || endDate) {
-      where.createdAt = {}
-      if (startDate) where.createdAt.gte = new Date(startDate)
-      if (endDate) where.createdAt.lte = new Date(endDate)
-    }
-    
-    if (customerId) {
-      where.customerId = customerId
-    }
-
-    const sales = await prisma.sale.findMany({
-      where,
-      include: {
-        customer: true,
-        items: true,
-      },
-      orderBy: { createdAt: 'desc' },
-      take: 100,
-    })
-
-    return NextResponse.json(sales)
-  } catch (error) {
-    console.error('Sales GET error:', error)
-    return NextResponse.json({ error: 'Failed to fetch sales' }, { status: 500 })
-  }
-}
-
 export async function POST(request: NextRequest) {
   const session = await getServerSession(authOptions)
+
   if (!session) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    return NextResponse.json(
+      { error: 'Unauthorized' },
+      { status: 401 }
+    )
   }
 
   try {
     const body = await request.json()
-    
-    const result = await prisma.$transaction(async (tx) => {
-      // 1. Get settings and increment invoice number
-      const settings = await tx.settings.findFirst()
-      if (!settings) throw new Error('Settings not found')
 
-      const updatedSettings = await tx.settings.update({
-        where: { id: settings.id },
-        data: { currentInvoiceNumber: { increment: 1 } },
-      })
+    if (!body.items || body.items.length === 0) {
+      return NextResponse.json(
+        { error: 'No items found' },
+        { status: 400 }
+      )
+    }
 
-      const invoiceNumber = generateInvoiceNumber(
-        updatedSettings.invoicePrefix,
-        updatedSettings.currentInvoiceNumber
+    // =========================================
+    // SETTINGS
+    // =========================================
+
+    const settings = await prisma.settings.findFirst()
+
+    if (!settings) {
+      throw new Error('Settings not found')
+    }
+
+    const updatedSettings = await prisma.settings.update({
+      where: {
+        id: settings.id,
+      },
+      data: {
+        currentInvoiceNumber: {
+          increment: 1,
+        },
+      },
+    })
+
+    const invoiceNumber = generateInvoiceNumber(
+      updatedSettings.invoicePrefix,
+      updatedSettings.currentInvoiceNumber
+    )
+
+    // =========================================
+    // TOTALS
+    // =========================================
+
+    const subtotal = body.items.reduce(
+      (sum: number, item: any) =>
+        sum + item.sellingPrice * item.quantity,
+      0
+    )
+
+    const totalDiscount = body.items.reduce(
+      (sum: number, item: any) =>
+        sum + (item.discount || 0),
+      0
+    )
+
+    const totalGst = body.items.reduce(
+      (sum: number, item: any) => {
+        const taxable =
+          item.sellingPrice * item.quantity -
+          (item.discount || 0)
+
+        return sum + taxable * (item.gstRate / 100)
+      },
+      0
+    )
+
+    const grandTotal =
+      subtotal - totalDiscount + totalGst
+
+    const paidAmount =
+      parseFloat(body.paidAmount) || grandTotal
+
+    const dueAmount = grandTotal - paidAmount
+
+    // =========================================
+    // GET PRODUCTS
+    // =========================================
+
+    const productIds = body.items.map(
+      (item: any) => item.productId
+    )
+
+    const products = await prisma.product.findMany({
+      where: {
+        id: {
+          in: productIds,
+        },
+      },
+    })
+
+    // =========================================
+    // STOCK VALIDATION
+    // =========================================
+
+    for (const item of body.items) {
+      const product = products.find(
+        (p) => p.id === item.productId
       )
 
-      // 2. Calculate totals and prepare items
-      const subtotal = body.items.reduce((sum: number, item: any) => sum + (item.sellingPrice * item.quantity), 0)
-      const totalDiscount = body.items.reduce((sum: number, item: any) => sum + (item.discount || 0), 0)
-      const totalGst = body.items.reduce((sum: number, item: any) => {
-        const taxable = (item.sellingPrice * item.quantity) - (item.discount || 0)
-        return sum + (taxable * (item.gstRate / 100))
-      }, 0)
-      const grandTotal = subtotal - totalDiscount + totalGst
-      const paidAmount = parseFloat(body.paidAmount) || grandTotal
-      const dueAmount = grandTotal - paidAmount
+      if (!product) {
+        throw new Error(
+          `${item.productName} not found`
+        )
+      }
 
-      // 3. Create Sale
-      const sale = await tx.sale.create({
-        data: {
-          invoiceNumber,
-          customerId: body.customerId || null,
-          customerName: body.customerName || 'Walk-in Customer',
-          customerPhone: body.customerPhone || null,
-          subtotal,
-          totalDiscount,
-          totalGst,
-          grandTotal,
-          paidAmount,
-          dueAmount,
-          paymentStatus: dueAmount <= 0 ? 'PAID' : paidAmount > 0 ? 'PARTIAL' : 'DUE',
-          paymentMode: body.paymentMode || 'CASH',
-          notes: body.notes || '',
-          createdBy: session.user.id,
-          items: {
-            create: body.items.map((item: any) => ({
+      if (product.currentStock < item.quantity) {
+        throw new Error(
+          `Insufficient stock for ${item.productName}`
+        )
+      }
+    }
+
+    // =========================================
+    // CREATE SALE
+    // =========================================
+
+    const sale = await prisma.sale.create({
+      data: {
+        invoiceNumber,
+
+        customerId: body.customerId || null,
+
+        customerName:
+          body.customerName || 'Walk-in Customer',
+
+        customerPhone:
+          body.customerPhone || null,
+
+        subtotal,
+
+        totalDiscount,
+
+        totalGst,
+
+        grandTotal,
+
+        paidAmount,
+
+        dueAmount,
+
+        paymentStatus:
+          dueAmount <= 0
+            ? 'PAID'
+            : paidAmount > 0
+            ? 'PARTIAL'
+            : 'DUE',
+
+        paymentMode:
+          body.paymentMode || 'CASH',
+
+        notes: body.notes || '',
+
+        createdBy: session.user.id,
+
+        items: {
+          create: body.items.map((item: any) => {
+            const taxable =
+              item.sellingPrice * item.quantity -
+              (item.discount || 0)
+
+            const gstAmount =
+              taxable * (item.gstRate / 100)
+
+            return {
               productId: item.productId,
               productName: item.productName,
               quantity: item.quantity,
@@ -106,33 +182,43 @@ export async function POST(request: NextRequest) {
               sellingPrice: item.sellingPrice,
               discount: item.discount || 0,
               gstRate: item.gstRate,
-              gstAmount: ((item.sellingPrice * item.quantity) - (item.discount || 0)) * (item.gstRate / 100),
-              total: ((item.sellingPrice * item.quantity) - (item.discount || 0)) * (1 + item.gstRate / 100),
-            })),
-          },
+              gstAmount,
+              total: taxable + gstAmount,
+            }
+          }),
         },
-        include: { items: true },
-      })
+      },
+      include: {
+        items: true,
+      },
+    })
 
-      // 4. Update Stock and create transactions
-      const productIds = body.items.map((item: any) => item.productId)
-      const products = await tx.product.findMany({
-        where: { id: { in: productIds } }
-      })
+    // =========================================
+    // UPDATE STOCK
+    // =========================================
 
-      for (const item of body.items) {
-        const product = products.find(p => p.id === item.productId)
-        if (!product) throw new Error(`Product ${item.productName} not found`)
+    await Promise.all(
+      body.items.map(async (item: any) => {
+        const product = products.find(
+          (p) => p.id === item.productId
+        )
+
+        if (!product) return
 
         const previousStock = product.currentStock
-        const newStock = previousStock - item.quantity
+        const newStock =
+          previousStock - item.quantity
 
-        await tx.product.update({
-          where: { id: item.productId },
-          data: { currentStock: newStock },
+        await prisma.product.update({
+          where: {
+            id: item.productId,
+          },
+          data: {
+            currentStock: newStock,
+          },
         })
 
-        await tx.stockTransaction.create({
+        await prisma.stockTransaction.create({
           data: {
             productId: item.productId,
             productName: item.productName,
@@ -145,51 +231,78 @@ export async function POST(request: NextRequest) {
             createdBy: session.user.id,
           },
         })
-      }
-
-      // 5. Update Customer Due
-      if (body.customerId && dueAmount > 0) {
-        await tx.customer.update({
-          where: { id: body.customerId },
-          data: {
-            totalPurchases: { increment: grandTotal },
-            totalDue: { increment: dueAmount },
-          },
-        })
-      }
-
-      // 6. Update Cashbook
-      const lastEntry = await tx.cashbook.findFirst({
-        orderBy: { createdAt: 'desc' },
       })
-      const previousBalance = lastEntry?.newBalance || 0
-      
-      if (paidAmount > 0) {
-        await tx.cashbook.create({
-          data: {
-            type: 'INCOME',
-            category: 'SALE',
-            amount: paidAmount,
-            previousBalance,
-            newBalance: previousBalance + paidAmount,
-            paymentMode: body.paymentMode || 'CASH',
-            referenceType: 'SALE',
-            referenceId: sale.id,
-            description: `Sale: ${invoiceNumber}`,
-            createdBy: session.user.id,
+    )
+
+    // =========================================
+    // CUSTOMER UPDATE
+    // =========================================
+
+    if (body.customerId) {
+      await prisma.customer.update({
+        where: {
+          id: body.customerId,
+        },
+        data: {
+          totalPurchases: {
+            increment: grandTotal,
+          },
+
+          totalDue: {
+            increment:
+              dueAmount > 0 ? dueAmount : 0,
+          },
+        },
+      })
+    }
+
+    // =========================================
+    // CASHBOOK
+    // =========================================
+
+    if (paidAmount > 0) {
+      const lastEntry =
+        await prisma.cashbook.findFirst({
+          orderBy: {
+            createdAt: 'desc',
           },
         })
-      }
 
-      return sale
-    }, {
-      maxWait: 20000, // Wait up to 20s for connection
-      timeout: 25000, // Allow up to 25s for transaction execution
-    })
+      const previousBalance =
+        lastEntry?.newBalance || 0
 
-    return NextResponse.json(result)
+      await prisma.cashbook.create({
+        data: {
+          type: 'INCOME',
+          category: 'SALE',
+          amount: paidAmount,
+          previousBalance,
+          newBalance:
+            previousBalance + paidAmount,
+          paymentMode:
+            body.paymentMode || 'CASH',
+          referenceType: 'SALE',
+          referenceId: sale.id,
+          description: `Sale: ${invoiceNumber}`,
+          createdBy: session.user.id,
+        },
+      })
+    }
+
+    return NextResponse.json(sale)
   } catch (error) {
-    console.error('Sales POST error:', error)
-    return NextResponse.json({ error: error instanceof Error ? error.message : 'Failed to create sale' }, { status: 500 })
+    console.error(error)
+
+    return NextResponse.json(
+      {
+        error:
+          error instanceof Error
+            ? error.message
+            : 'Failed to create sale',
+      },
+      {
+        status: 500,
+      }
+    )
   }
 }
