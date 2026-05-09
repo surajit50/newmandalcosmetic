@@ -404,14 +404,15 @@ export default function POSPage() {
       const doc = new jsPDF({
         orientation: "portrait",
         unit: "mm",
-        format: [80, 200],
+        format: [80, 120],
       });
 
       const pageWidth = 80;
       const margin = 4;
       let y = 8;
 
-      // helpers
+      // ---------------- Helpers ----------------
+
       const centerText = (
         text: string,
         size = 10,
@@ -424,7 +425,7 @@ export default function POSPage() {
 
         doc.text(text, (pageWidth - textWidth) / 2, y);
 
-        y += size * 0.5;
+        y += size * 0.5 + 1;
       };
 
       const leftText = (
@@ -437,25 +438,28 @@ export default function POSPage() {
 
         doc.text(text, margin, y);
 
-        y += size * 0.5;
+        y += size * 0.5 + 1;
       };
 
-      const twoColumn = (left: string, right: string, size = 9) => {
-        doc.setFont("courier", "normal");
+      const twoColumn = (
+        left: string,
+        right: string,
+        size = 9,
+        style: "normal" | "bold" = "normal",
+      ) => {
+        doc.setFont("courier", style);
         doc.setFontSize(size);
 
         doc.text(left, margin, y);
 
-        const rw = doc.getTextWidth(right);
+        const rightWidth = doc.getTextWidth(right);
 
-        doc.text(right, pageWidth - margin - rw, y);
+        doc.text(right, pageWidth - margin - rightWidth, y);
 
-        y += size * 0.5;
+        y += size * 0.5 + 1;
       };
 
       const dashedLine = () => {
-        doc.setLineWidth(0.1);
-
         let x = margin;
 
         while (x < pageWidth - margin) {
@@ -466,20 +470,30 @@ export default function POSPage() {
         y += 3;
       };
 
-      // HEADER
-      centerText(shopSettings.shopName || "SHOP NAME", 12, "bold");
+      // ---------------- Header ----------------
+
+      centerText(
+        (shopSettings.shopName || "SHOP NAME").toUpperCase(),
+        12,
+        "bold",
+      );
 
       if (shopSettings.address) {
         centerText(shopSettings.address, 8);
       }
 
       if (shopSettings.phone) {
-        centerText(`Ph: ${shopSettings.phone}`, 8);
+        centerText(`Phone: ${shopSettings.phone}`, 8);
+      }
+
+      if (shopSettings.gstin) {
+        centerText(`GSTIN: ${shopSettings.gstin}`, 8);
       }
 
       dashedLine();
 
-      // invoice info
+      // ---------------- Invoice Info ----------------
+
       leftText(`Invoice: ${completedSale.invoiceNumber}`, 8);
 
       leftText(
@@ -487,11 +501,15 @@ export default function POSPage() {
         8,
       );
 
-      leftText(`Customer: ${completedSale.customerName}`, 8);
+      leftText(
+        `Customer: ${completedSale.customerName || "Walk-in Customer"}`,
+        8,
+      );
 
       dashedLine();
 
-      // items header
+      // ---------------- Table Header ----------------
+
       doc.setFont("courier", "bold");
       doc.setFontSize(8);
 
@@ -502,7 +520,8 @@ export default function POSPage() {
 
       y += 4;
 
-      // items
+      // ---------------- Items ----------------
+
       doc.setFont("courier", "normal");
 
       completedSale.items.forEach((item: any) => {
@@ -515,53 +534,81 @@ export default function POSPage() {
 
         doc.text(String(item.quantity), 42, y);
 
-        doc.text(String(item.sellingPrice.toFixed(0)), 54, y);
+        doc.text(Number(item.sellingPrice || 0).toFixed(0), 54, y);
 
-        doc.text(String(item.total.toFixed(0)), 70, y);
+        doc.text(Number(item.total || 0).toFixed(0), 70, y);
 
         y += 4;
       });
 
       dashedLine();
 
-      // totals
-      twoColumn("Subtotal", completedSale.subtotal.toFixed(0), 9);
+      // ---------------- Totals ----------------
 
-      twoColumn("GST", completedSale.totalGst.toFixed(0), 9);
+      twoColumn("Subtotal", Number(completedSale.subtotal || 0).toFixed(0), 9);
 
-      if (completedSale.totalDiscount > 0) {
-        twoColumn("Discount", completedSale.totalDiscount.toFixed(0), 9);
+      twoColumn("GST", Number(completedSale.totalGst || 0).toFixed(0), 9);
+
+      if ((completedSale.totalDiscount || 0) > 0) {
+        twoColumn(
+          "Discount",
+          Number(completedSale.totalDiscount || 0).toFixed(0),
+          9,
+        );
       }
 
-      doc.setFont("courier", "bold");
+      // double line
+      doc.line(margin, y, pageWidth - margin, y);
 
-      twoColumn("TOTAL", completedSale.grandTotal.toFixed(0), 11);
+      y += 1.5;
+
+      doc.line(margin, y, pageWidth - margin, y);
+
+      y += 4;
+
+      twoColumn(
+        "TOTAL",
+        Number(completedSale.grandTotal || 0).toFixed(0),
+        11,
+        "bold",
+      );
 
       y += 2;
 
-      doc.setFont("courier", "normal");
+      // ---------------- Payment ----------------
 
-      twoColumn("Paid", completedSale.paidAmount.toFixed(0), 8);
+      twoColumn("Paid", Number(completedSale.paidAmount || 0).toFixed(0), 8);
 
-      twoColumn("Due", completedSale.dueAmount.toFixed(0), 8);
+      twoColumn("Due", Number(completedSale.dueAmount || 0).toFixed(0), 8);
 
       dashedLine();
 
-      centerText("Thank You Visit Again", 8);
+      // ---------------- Footer ----------------
 
-      // IMPORTANT FIX
-      // REMOVE THIS:
-      // doc.internal.pageSize.height = finalHeight;
+      centerText("Thank You For Your Purchase!", 8);
+
+      centerText("Visit Again", 8);
+
+      y += 4;
+
+      // ---------------- Auto Page Height ----------------
+
+      const finalHeight = y + 5;
+
+      (doc as any).internal.pageSize.height = finalHeight;
+      (doc as any).internal.pageSize.width = 80;
+
+      // ---------------- Save ----------------
 
       doc.save(`Invoice-${completedSale.invoiceNumber}.pdf`);
 
-      toast.success("PDF downloaded", {
+      toast.success("PDF downloaded successfully", {
         id: toastId,
       });
     } catch (error) {
-      console.error(error);
+      console.error("PDF Error:", error);
 
-      toast.error("PDF generation failed", {
+      toast.error("Failed to generate PDF", {
         id: toastId,
       });
     }
