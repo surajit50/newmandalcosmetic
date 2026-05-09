@@ -37,11 +37,11 @@ export async function generatePDF({
   const toastId = toast.loading("Generating PDF...");
 
   try {
-    // Dynamic long page
+    // FIXED PAGE SIZE
     const doc = new jsPDF({
       orientation: "portrait",
       unit: "mm",
-      format: [80, 500],
+      format: [80, 200],
     });
 
     const pageWidth = 80;
@@ -51,7 +51,7 @@ export async function generatePDF({
     let y = 4;
 
     // =========================
-    // TEXT HELPERS
+    // HELPERS
     // =========================
 
     const centerText = (
@@ -188,6 +188,7 @@ export async function generatePDF({
     doc.text("Qty", 38, y);
     doc.text("Rate", 48, y);
     doc.text("Disc", 59, y);
+
     doc.text("Amt", 76, y, {
       align: "right",
     });
@@ -213,7 +214,7 @@ export async function generatePDF({
         item.sellingPrice * item.quantity -
           (item.discount || 0);
 
-      // Item name
+      // Item Name
       doc.text(itemName, margin, y);
 
       // Qty
@@ -235,7 +236,7 @@ export async function generatePDF({
         y
       );
 
-      // Amount right align
+      // Amount
       doc.text(
         formatNumber(itemTotal),
         76,
@@ -246,6 +247,12 @@ export async function generatePDF({
       );
 
       y += 4;
+
+      // AUTO PAGE BREAK
+      if (y > 185) {
+        doc.addPage([80, 200], "portrait");
+        y = 10;
+      }
     });
 
     dashedLine();
@@ -293,7 +300,7 @@ export async function generatePDF({
     dashedLine();
 
     // =========================
-    // PAYMENT DETAILS
+    // PAYMENT
     // =========================
 
     twoColumn(
@@ -330,19 +337,8 @@ export async function generatePDF({
 
     centerText("Visit Again", 8);
 
-    y += 3;
-
     // =========================
-    // AUTO HEIGHT
-    // =========================
-
-    const finalHeight = Math.max(y + 8, 60);
-
-    doc.internal.pageSize.setHeight(finalHeight);
-    doc.internal.pageSize.setWidth(80);
-
-    // =========================
-    // SAVE PDF
+    // SAVE
     // =========================
 
     doc.save(
