@@ -279,8 +279,7 @@ export default function POSPage() {
   discount: item.discount,
   gstRate: item.gstRate,
   gstAmount: item.gstAmount,
-}))// per unit
-          ,
+})),
           customerId: selectedCustomer?.id,
           customerName: selectedCustomer?.name || "Walk-in Customer",
           customerPhone: selectedCustomer?.phone,
