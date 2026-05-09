@@ -87,9 +87,8 @@ interface Sale {
   items: any[];
 }
 
+type PaymentMode = "CASH" | "UPI" | "CARD" | "BANK";
 
-
-type PaymentMode = "CASH" | "UPI" | "CARD"| "BANK";
 export default function POSPage() {
   // ---------- State ----------
   const [products, setProducts] = useState<Product[]>([]);
@@ -707,8 +706,9 @@ export default function POSPage() {
                   return (
                     <div
                       key={item.productId}
-                      className="p-1.5 sm:p-2 rounded-xl bg-card border border-border/50 shadow-sm animate-in slide-in-from-right duration-300 group/item relative"
+                      className="p-1.5 rounded-xl bg-card border border-border/50 shadow-sm animate-in slide-in-from-right duration-300 relative"
                     >
+                      {/* Product name & trash */}
                       <div className="flex justify-between items-start gap-2 mb-1">
                         <div className="flex flex-col pr-6">
                           <span className="font-bold text-[10px] sm:text-[11px] leading-tight text-foreground line-clamp-1">{item.productName}</span>
@@ -719,43 +719,63 @@ export default function POSPage() {
                         <Button
                           variant="ghost"
                           size="icon"
-                          className="h-5 w-5 sm:h-6 sm:w-6 rounded-full text-destructive hover:bg-destructive/10 shrink-0 absolute top-1 right-1 opacity-100 sm:opacity-0 group-hover/item:opacity-100 transition-opacity"
+                          className="h-5 w-5 rounded-full text-destructive hover:bg-destructive/10 shrink-0 absolute top-1 right-1"
                           onClick={() => removeFromCart(item.productId)}
                         >
-                          <Trash2 className="w-2.5 sm:w-3 h-2.5 sm:h-3" />
+                          <Trash2 className="w-3 h-3" />
                         </Button>
                       </div>
 
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-1 bg-secondary/50 rounded-full p-0.5 border border-border/50">
-                          <Button variant="ghost" size="icon" className="h-5 w-5 sm:h-6 sm:w-6 rounded-full hover:bg-background" onClick={() => updateQuantity(item.productId, item.quantity - 1)}>
-                            <Minus className="w-2 sm:w-2.5 h-2 sm:h-2.5" />
-                          </Button>
-                          <span className="w-5 sm:w-6 text-center text-[10px] sm:text-[11px] font-black text-foreground">{item.quantity}</span>
-                          <Button variant="ghost" size="icon" className="h-5 w-5 sm:h-6 sm:w-6 rounded-full hover:bg-background" onClick={() => updateQuantity(item.productId, item.quantity + 1)}>
-                            <Plus className="w-2 sm:w-2.5 h-2 sm:h-2.5" />
-                          </Button>
+                      {/* Quantity, Discount, Price – responsive layout */}
+                      <div className="flex flex-col gap-1 mt-1">
+                        {/* Main row: quantity + price */}
+                        <div className="flex items-center justify-between">
+                          {/* Quantity controls */}
+                          <div className="flex items-center gap-1 bg-secondary/50 rounded-full p-0.5 border border-border/50">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-7 w-7 rounded-full hover:bg-background"
+                              onClick={() => updateQuantity(item.productId, item.quantity - 1)}
+                            >
+                              <Minus className="w-3 h-3" />
+                            </Button>
+                            <span className="w-6 text-center text-sm font-black text-foreground">
+                              {item.quantity}
+                            </span>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-7 w-7 rounded-full hover:bg-background"
+                              onClick={() => updateQuantity(item.productId, item.quantity + 1)}
+                            >
+                              <Plus className="w-3 h-3" />
+                            </Button>
+                          </div>
+
+                          {/* Price */}
+                          <div className="text-right">
+                            <div className="font-black text-sm text-primary">
+                              {formatCurrency(item.sellingPrice * item.quantity - item.discount)}
+                            </div>
+                            <div className="text-[9px] text-muted-foreground font-bold">
+                              {formatCurrency(item.sellingPrice)}/u (incl. GST)
+                            </div>
+                          </div>
                         </div>
 
-                        {/* Discount field – validated */}
-                        <div className="flex items-center gap-1">
+                        {/* Discount row – always visible, clearly labelled */}
+                        <div className="flex items-center gap-2">
+                          <Label className="text-[10px] font-bold text-muted-foreground shrink-0">
+                            Disc.:
+                          </Label>
                           <Input
                             type="number"
                             placeholder="0"
                             value={item.discount || ""}
                             onChange={(e) => handleDiscountChange(item.productId, e.target.value)}
-                            className="w-12 h-6 text-xs p-1 text-right rounded"
+                            className="h-7 w-16 text-sm p-1 text-right rounded-md"
                           />
-                          <span className="text-[8px] font-bold text-muted-foreground">disc</span>
-                        </div>
-
-                        <div className="text-right">
-                          <div className="font-black text-xs sm:text-sm text-primary">
-                            {formatCurrency(item.sellingPrice * item.quantity - item.discount)}
-                          </div>
-                          <div className="text-[8px] sm:text-[9px] text-muted-foreground font-bold">
-                            {formatCurrency(item.sellingPrice)}/u (incl. GST)
-                          </div>
                         </div>
                       </div>
                     </div>
@@ -790,9 +810,7 @@ export default function POSPage() {
             </div>
 
             <div className="grid grid-cols-3 gap-2">
-              {( ["CASH", "UPI", "CARD", "BANK"] as const
-).map((mode) => (
-              
+              {( ["CASH", "UPI", "CARD", "BANK"] as const).map((mode) => (
                 <Button
                   key={mode}
                   variant={paymentMode === mode ? "default" : "outline"}
@@ -802,21 +820,10 @@ export default function POSPage() {
                   )}
                   onClick={() => setPaymentMode(mode)}
                 >
-                  {mode === "CASH" && (
-  <Banknote className="w-3.5 h-3.5" />
-)}
-
-{mode === "UPI" && (
-  <Smartphone className="w-3.5 h-3.5" />
-)}
-
-{mode === "CARD" && (
-  <CreditCard className="w-3.5 h-3.5" />
-)}
-
-{mode === "BANK" && (
-  <CreditCard className="w-3.5 h-3.5" />
-)}
+                  {mode === "CASH" && <Banknote className="w-3.5 h-3.5" />}
+                  {mode === "UPI" && <Smartphone className="w-3.5 h-3.5" />}
+                  {mode === "CARD" && <CreditCard className="w-3.5 h-3.5" />}
+                  {mode === "BANK" && <CreditCard className="w-3.5 h-3.5" />}
                   <span className="text-[8px] font-bold uppercase tracking-tighter">{mode}</span>
                 </Button>
               ))}
