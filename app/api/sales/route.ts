@@ -4,34 +4,21 @@ import { authOptions } from '@/lib/auth'
 import prisma from '@/lib/prisma'
 import { generateInvoiceNumber } from '@/lib/types'
 
-// --------------------------------------------------
-// POST – Create a new sale (GST‑inclusive)
-// --------------------------------------------------
 export async function POST(request: NextRequest) {
   const session = await getServerSession(authOptions)
-
   if (!session) {
-    return NextResponse.json(
-      { error: 'Unauthorized' },
-      { status: 401 }
-    )
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
   try {
     const body = await request.json()
-
     if (!body.items || body.items.length === 0) {
-      return NextResponse.json(
-        { error: 'No items found' },
-        { status: 400 }
-      )
+      return NextResponse.json({ error: 'No items found' }, { status: 400 })
     }
 
     // ----- Settings (increment invoice number) -----
     const settings = await prisma.settings.findFirst()
-    if (!settings) {
-      throw new Error('Settings not found')
-    }
+    if (!settings) throw new Error('Settings not found')
 
     const updatedSettings = await prisma.settings.update({
       where: { id: settings.id },
@@ -43,40 +30,30 @@ export async function POST(request: NextRequest) {
       updatedSettings.currentInvoiceNumber
     )
 
-    // ----- Compute totals (inclusive logic) -----
-    // subtotal = sum of all inclusive selling prices * quantities (before discount)
+    // ----- GST‑inclusive totals -----
     const subtotal = body.items.reduce(
-      (sum: number, item: any) =>
-        sum + item.sellingPrice * item.quantity,
+      (sum: number, item: any) => sum + item.sellingPrice * item.quantity,
       0
     )
 
     const totalDiscount = body.items.reduce(
-      (sum: number, item: any) =>
-        sum + (item.discount || 0),
+      (sum: number, item: any) => sum + (item.discount || 0),
       0
     )
 
-    // For each line, extract taxable base and GST from the inclusive amount
+    // Compute taxable base and GST per line from inclusive price
     const lineItems = body.items.map((item: any) => {
       const inclusive = item.sellingPrice * item.quantity - (item.discount || 0)
-      const taxable = inclusive / (1 + item.gstRate / 100)    // base amount
-      const gstAmount = inclusive - taxable                   // GST amount
-
+      const taxable = inclusive / (1 + item.gstRate / 100)  // base
+      const gstAmount = inclusive - taxable                 // GST for this line
       return {
         ...item,
-        taxable,      // optional, not saved in schema, just for clarity
-        gstAmount,    // total GST for this line
-        total: inclusive,  // final line total (already inclusive)
+        gstAmount,     // total GST for the line
+        total: inclusive,
       }
     })
 
-    const totalGst = lineItems.reduce(
-      (sum, item) => sum + item.gstAmount,
-      0
-    )
-
-    // grand total = subtotal (inclusive before discount) - discount
+    const totalGst = lineItems.reduce((sum, item) => sum + item.gstAmount, 0)
     const grandTotal = subtotal - totalDiscount
 
     const paidAmount = parseFloat(body.paidAmount) || grandTotal
@@ -91,9 +68,7 @@ export async function POST(request: NextRequest) {
     // ----- Stock validation -----
     for (const item of body.items) {
       const product = products.find((p) => p.id === item.productId)
-      if (!product) {
-        throw new Error(`${item.productName} not found`)
-      }
+      if (!product) throw new Error(`${item.productName} not found`)
       if (product.currentStock < item.quantity) {
         throw new Error(`Insufficient stock for ${item.productName}`)
       }
@@ -123,17 +98,15 @@ export async function POST(request: NextRequest) {
             productName: item.productName,
             quantity: item.quantity,
             mrp: item.mrp,
-            sellingPrice: item.sellingPrice,  // inclusive per unit
+            sellingPrice: item.sellingPrice,   // inclusive per unit
             discount: item.discount || 0,
             gstRate: item.gstRate,
-            gstAmount: item.gstAmount,        // total GST for the line
-            total: item.total,                // final line total (inclusive)
+            gstAmount: item.gstAmount,         // total GST for the line
+            total: item.total,                 // final line total (incl. GST)
           })),
         },
       },
-      include: {
-        items: true,
-      },
+      include: { items: true },
     })
 
     // ----- Update stock & create stock transactions -----
@@ -206,26 +179,17 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(
       {
         error:
-          error instanceof Error
-            ? error.message
-            : 'Failed to create sale',
+          error instanceof Error ? error.message : 'Failed to create sale',
       },
       { status: 500 }
     )
   }
 }
 
-// --------------------------------------------------
-// GET – List sales (with optional search)
-// --------------------------------------------------
 export async function GET(request: NextRequest) {
   const session = await getServerSession(authOptions)
-
   if (!session) {
-    return NextResponse.json(
-      { error: 'Unauthorized' },
-      { status: 401 }
-    )
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
   try {
@@ -235,7 +199,6 @@ export async function GET(request: NextRequest) {
     const page = parseInt(searchParams.get('page') || '1')
     const skip = (page - 1) * limit
 
-    // Build filter
     const where: any = {}
     if (search) {
       where.OR = [
@@ -247,9 +210,7 @@ export async function GET(request: NextRequest) {
     const [sales, total] = await Promise.all([
       prisma.sale.findMany({
         where,
-        include: {
-          items: true,
-        },
+        include: { items: true },
         orderBy: { createdAt: 'desc' },
         skip,
         take: limit,
