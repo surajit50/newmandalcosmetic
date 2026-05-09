@@ -394,184 +394,176 @@ export default function POSPage() {
   // ---------- PDF Generation (jsPDF only – fixed & robust) ----------
   const handleSavePDF = async () => {
     if (!completedSale || !shopSettings) {
-      toast.error("No sale or shop settings available");
+      toast.error("No sale data available");
       return;
     }
 
     const toastId = toast.loading("Generating PDF...");
 
     try {
-      // ---------- Create PDF document ----------
       const doc = new jsPDF({
+        orientation: "portrait",
         unit: "mm",
-        format: [80, 200], // 80mm width, generous height (will be trimmed later)
+        format: [80, 200],
       });
-
-      // *** Quick validation: draw a colored rectangle and a test word ***
-      doc.setFillColor(220, 220, 220);
-      doc.rect(5, 5, 70, 10, "F");
-      doc.setTextColor(0);
-      doc.setFont("courier", "bold");
-      doc.setFontSize(12);
-      doc.text("TEST - PDF OK", 40, 10, { align: "center" });
-      // *** Remove the block above after confirming PDF is generated ***
 
       const pageWidth = 80;
       const margin = 4;
-      let y = 20; // start below the test rectangle
+      let y = 8;
 
-      // ---------- Helper functions ----------
-      const centerText = (text: string, size = 12, style = "normal") => {
+      // helpers
+      const centerText = (
+        text: string,
+        size = 10,
+        style: "normal" | "bold" = "normal",
+      ) => {
         doc.setFont("courier", style);
         doc.setFontSize(size);
+
         const textWidth = doc.getTextWidth(text);
+
         doc.text(text, (pageWidth - textWidth) / 2, y);
-        y += size * 0.45;
+
+        y += size * 0.5;
       };
 
-      const leftText = (text: string, size = 10, style = "normal") => {
+      const leftText = (
+        text: string,
+        size = 9,
+        style: "normal" | "bold" = "normal",
+      ) => {
         doc.setFont("courier", style);
         doc.setFontSize(size);
+
         doc.text(text, margin, y);
-        y += size * 0.45;
+
+        y += size * 0.5;
       };
 
-      const twoColumn = (left: string, right: string, size = 10) => {
+      const twoColumn = (left: string, right: string, size = 9) => {
         doc.setFont("courier", "normal");
         doc.setFontSize(size);
+
         doc.text(left, margin, y);
+
         const rw = doc.getTextWidth(right);
+
         doc.text(right, pageWidth - margin - rw, y);
-        y += size * 0.45;
+
+        y += size * 0.5;
       };
 
       const dashedLine = () => {
-        doc.setDrawColor(0);
         doc.setLineWidth(0.1);
-        const startX = margin;
-        const endX = pageWidth - margin;
-        const segLength = 2;
-        let x = startX;
-        while (x < endX) {
-          const nextX = Math.min(x + segLength, endX);
-          doc.line(x, y, nextX, y);
-          x += segLength * 2;
+
+        let x = margin;
+
+        while (x < pageWidth - margin) {
+          doc.line(x, y, x + 1.5, y);
+          x += 3;
         }
-        y += 2;
+
+        y += 3;
       };
 
-      // ---------- Shop Header ----------
-      const shopName = shopSettings.shopName || "Shop Name";
-      centerText(shopName.toUpperCase(), 12, "bold");
+      // HEADER
+      centerText(shopSettings.shopName || "SHOP NAME", 12, "bold");
+
       if (shopSettings.address) {
         centerText(shopSettings.address, 8);
       }
-      if (shopSettings.phone || shopSettings.gstin) {
-        const contact = [shopSettings.phone, shopSettings.gstin]
-          .filter(Boolean)
-          .join(" | ");
-        centerText(contact, 8);
+
+      if (shopSettings.phone) {
+        centerText(`Ph: ${shopSettings.phone}`, 8);
       }
+
       dashedLine();
 
-      // Invoice / Date
-      twoColumn(
-        `Invoice: ${completedSale.invoiceNumber}`,
-        `Date: ${new Date(completedSale.createdAt).toLocaleDateString()}`,
+      // invoice info
+      leftText(`Invoice: ${completedSale.invoiceNumber}`, 8);
+
+      leftText(
+        `Date: ${new Date(completedSale.createdAt).toLocaleString()}`,
         8,
       );
 
-      // Customer
-      const custName = completedSale.customerName || "Walk-in Customer";
-      const custDisplay =
-        custName !== "Walk-in Customer"
-          ? `Customer: ${custName}`
-          : "Walk-in Customer";
-      leftText(custDisplay, 8);
+      leftText(`Customer: ${completedSale.customerName}`, 8);
+
       dashedLine();
 
-      // ---------- Table Header ----------
+      // items header
       doc.setFont("courier", "bold");
       doc.setFontSize(8);
 
-      const col1 = margin;
-      const col2 = margin + 36;
-      const rateLabel = "Rate";
-      const amtLabel = "Amt";
-      const rateLabelWidth = doc.getTextWidth(rateLabel);
-      const amtLabelWidth = doc.getTextWidth(amtLabel);
+      doc.text("Item", margin, y);
+      doc.text("Qty", 42, y);
+      doc.text("Rate", 54, y);
+      doc.text("Amt", 70, y);
 
-      doc.text("Item", col1, y);
-      doc.text("Qty", col2, y);
-      doc.text(rateLabel, pageWidth - margin - rateLabelWidth, y);
-      doc.text(amtLabel, pageWidth - margin - amtLabelWidth, y);
-      y += 3.5;
+      y += 4;
 
-      // ---------- Items ----------
+      // items
       doc.setFont("courier", "normal");
-      (completedSale.items || []).forEach((item: any) => {
+
+      completedSale.items.forEach((item: any) => {
         const name =
-          (item.productName || "Unknown").length > 20
-            ? (item.productName || "Unknown").substring(0, 18) + ".."
-            : item.productName || "Unknown";
+          item.productName.length > 18
+            ? item.productName.substring(0, 18) + ".."
+            : item.productName;
 
-        doc.text(name, col1, y);
-        doc.text(`${item.quantity ?? 0}`, col2, y);
+        doc.text(name, margin, y);
 
-        // Right‑align numbers using getTextWidth
-        const rateStr = `${(item.sellingPrice ?? 0).toFixed(0)}`;
-        const amtStr = `${(item.total ?? 0).toFixed(0)}`;
-        doc.text(rateStr, pageWidth - margin - doc.getTextWidth(rateStr), y);
-        doc.text(amtStr, pageWidth - margin - doc.getTextWidth(amtStr), y);
-        y += 3.5;
+        doc.text(String(item.quantity), 42, y);
+
+        doc.text(String(item.sellingPrice.toFixed(0)), 54, y);
+
+        doc.text(String(item.total.toFixed(0)), 70, y);
+
+        y += 4;
       });
 
       dashedLine();
 
-      // ---------- Totals ----------
-      twoColumn("Subtotal:", (completedSale.subtotal ?? 0).toFixed(0), 9);
-      twoColumn("GST:", (completedSale.totalGst ?? 0).toFixed(0), 9);
-      if ((completedSale.totalDiscount ?? 0) > 0) {
-        twoColumn("Discount:", completedSale.totalDiscount.toFixed(0), 9);
+      // totals
+      twoColumn("Subtotal", completedSale.subtotal.toFixed(0), 9);
+
+      twoColumn("GST", completedSale.totalGst.toFixed(0), 9);
+
+      if (completedSale.totalDiscount > 0) {
+        twoColumn("Discount", completedSale.totalDiscount.toFixed(0), 9);
       }
 
-      // Double line before grand total
-      doc.setLineWidth(0.3);
-      doc.line(margin, y, pageWidth - margin, y);
-      y += 1.5;
-      doc.line(margin, y, pageWidth - margin, y);
-      y += 3;
-
       doc.setFont("courier", "bold");
-      doc.setFontSize(11);
-      const totalStr = `TOTAL: ${(completedSale.grandTotal ?? 0).toFixed(0)}`;
-      doc.text(totalStr, margin, y);
 
-      y += 6;
+      twoColumn("TOTAL", completedSale.grandTotal.toFixed(0), 11);
 
-      // Payment details
+      y += 2;
+
       doc.setFont("courier", "normal");
-      doc.setFontSize(8);
-      twoColumn("Paid:", (completedSale.paidAmount ?? 0).toFixed(0), 8);
-      twoColumn("Due:", (completedSale.dueAmount ?? 0).toFixed(0), 8);
+
+      twoColumn("Paid", completedSale.paidAmount.toFixed(0), 8);
+
+      twoColumn("Due", completedSale.dueAmount.toFixed(0), 8);
 
       dashedLine();
 
-      // Footer
-      centerText("Thank you for your purchase!", 8);
-      centerText("Visit again", 8);
+      centerText("Thank You Visit Again", 8);
 
-      // ---------- Trim page height ----------
-      const finalHeight = y + 10;
-      doc.internal.pageSize.height = finalHeight;
+      // IMPORTANT FIX
+      // REMOVE THIS:
+      // doc.internal.pageSize.height = finalHeight;
 
-      // ---------- Save ----------
       doc.save(`Invoice-${completedSale.invoiceNumber}.pdf`);
 
-      toast.success("PDF saved successfully", { id: toastId });
+      toast.success("PDF downloaded", {
+        id: toastId,
+      });
     } catch (error) {
-      console.error("PDF generation error:", error);
-      toast.error("Failed to save PDF – see console (F12)", { id: toastId });
+      console.error(error);
+
+      toast.error("PDF generation failed", {
+        id: toastId,
+      });
     }
   };
 
