@@ -269,24 +269,28 @@ export default function POSPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-        
-            items: cart.map((item) => ({
-  productId: item.productId,
-  productName: item.productName,
-  quantity: item.quantity,
-  mrp: item.mrp,
-  sellingPrice: item.sellingPrice,
-  discount: item.discount,
-  gstRate: item.gstRate,
-  gstAmount: item.gstAmount,
-})),
-          customerId: selectedCustomer?.id,
-          customerName: selectedCustomer?.name || "Walk-in Customer",
-          customerPhone: selectedCustomer?.phone,
-          paymentMode,
-          paidAmount: paidAmount || grandTotal.toString(),
-        }),
-      });
+  items: cart.map((item) => ({
+    productId: item.productId,
+    productName: item.productName,
+    quantity: item.quantity,
+    mrp: item.mrp,
+    sellingPrice: item.sellingPrice,
+    discount: item.discount,
+    gstRate: item.gstRate,
+    gstAmount: item.gstAmount,
+  })),
+
+  customerId: selectedCustomer?.id || null,
+  customerName:
+    selectedCustomer?.name || "Walk-in Customer",
+  customerPhone:
+    selectedCustomer?.phone || null,
+
+  paymentMode,
+
+  paidAmount:
+    paidAmount || grandTotal.toString(),
+}),
 
       if (response.ok) {
         const sale = await response.json();
