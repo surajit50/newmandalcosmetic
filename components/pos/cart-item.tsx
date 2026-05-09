@@ -1,6 +1,7 @@
 // components/pos/cart-item.tsx
 "use client";
 
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -23,8 +24,29 @@ export function CartItemRow({
   onRemove,
   onDiscountChange,
 }: CartItemProps) {
+  // Local state for the discount input – keeps the raw text while typing
+  const [discountInput, setDiscountInput] = useState(
+    item.discount ? item.discount.toString() : ""
+  );
+
+  // Sync local state if the parent updates the discount externally (e.g., due to max clamping)
+  useEffect(() => {
+    const parentValue = item.discount ? item.discount.toString() : "";
+    if (parentValue !== discountInput) {
+      setDiscountInput(parentValue);
+    }
+  }, [item.discount]);
+
+  const handleDiscountBlur = () => {
+    // Parse and clamp the final number, then push to parent
+    let num = parseFloat(discountInput) || 0;
+    const max = item.sellingPrice * item.quantity;
+    num = Math.min(num, max);
+    onDiscountChange(item.productId, num.toString());
+  };
+
   return (
-    <div className="p-1.5 rounded-xl bg-card border border-border/50 shadow-sm animate-in slide-in-from-right duration-300 relative">
+    <div className="p-1.5 rounded-xl bg-card border border-border/50 shadow-sm">
       {/* Name & trash */}
       <div className="flex justify-between items-start gap-2 mb-1">
         <div className="flex flex-col pr-6">
@@ -38,25 +60,25 @@ export function CartItemRow({
         <Button
           variant="ghost"
           size="icon"
-          className="h-5 w-5 rounded-full text-destructive hover:bg-destructive/10 shrink-0 absolute top-1 right-1"
+          className="min-h-[44px] min-w-[44px] rounded-full text-destructive hover:bg-destructive/10 shrink-0"
           onClick={() => onRemove(item.productId)}
         >
-          <Trash2 className="w-3 h-3" />
+          <Trash2 className="w-4 h-4" />
         </Button>
       </div>
 
       {/* Quantity, Price, Discount */}
       <div className="flex flex-col gap-1 mt-1">
         <div className="flex items-center justify-between">
-          {/* Quantity controls */}
-          <div className="flex items-center gap-1 bg-secondary/50 rounded-full p-0.5 border border-border/50">
+          {/* Quantity controls – now with larger touch targets */}
+          <div className="flex items-center gap-0.5 bg-secondary/50 rounded-full p-0.5 border border-border/50">
             <Button
               variant="ghost"
               size="icon"
-              className="h-7 w-7 rounded-full hover:bg-background"
+              className="min-h-[44px] min-w-[44px] rounded-full hover:bg-background"
               onClick={() => onUpdateQuantity(item.productId, item.quantity - 1)}
             >
-              <Minus className="w-3 h-3" />
+              <Minus className="w-5 h-5" />
             </Button>
             <span className="w-6 text-center text-sm font-black text-foreground">
               {item.quantity}
@@ -64,10 +86,10 @@ export function CartItemRow({
             <Button
               variant="ghost"
               size="icon"
-              className="h-7 w-7 rounded-full hover:bg-background"
+              className="min-h-[44px] min-w-[44px] rounded-full hover:bg-background"
               onClick={() => onUpdateQuantity(item.productId, item.quantity + 1)}
             >
-              <Plus className="w-3 h-3" />
+              <Plus className="w-5 h-5" />
             </Button>
           </div>
 
@@ -89,10 +111,12 @@ export function CartItemRow({
           </Label>
           <Input
             type="number"
+            inputMode="decimal"
             placeholder="0"
-            value={item.discount || ""}
-            onChange={(e) => onDiscountChange(item.productId, e.target.value)}
-            className="h-7 w-16 text-sm p-1 text-right rounded-md"
+            value={discountInput}
+            onChange={(e) => setDiscountInput(e.target.value)}
+            onBlur={handleDiscountBlur}
+            className="h-9 min-h-[44px] w-20 text-sm p-1 text-right rounded-md"
           />
         </div>
       </div>
