@@ -43,13 +43,13 @@ import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import jsPDF from "jspdf";
 
-// ---------- Types (unchanged) ----------
+// ---------- Types (unchanged except CartItem adjustments) ----------
 interface Product {
   id: string;
   name: string;
   barcode?: string;
   mrp: number;
-  sellingPrice: number;
+  sellingPrice: number; // now always inclusive of GST
   gstRate: number;
   currentStock: number;
   unit: string;
@@ -60,11 +60,10 @@ interface CartItem {
   productName: string;
   quantity: number;
   mrp: number;
-  sellingPrice: number;
-  discount: number;
+  sellingPrice: number;   // inclusive per unit
+  discount: number;       // fixed discount on this line (in ₹)
   gstRate: number;
-  gstAmount: number;
-  total: number;
+  gstAmount: number;      // GST amount per unit (derived from inclusive price)
 }
 
 interface Customer {
@@ -94,14 +93,10 @@ export default function POSPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<Product[]>([]);
   const [cart, setCart] = useState<CartItem[]>([]);
-  const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(
-    null,
-  );
+  const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
   const [customerSearch, setCustomerSearch] = useState("");
   const [customers, setCustomers] = useState<Customer[]>([]);
-  const [paymentMode, setPaymentMode] = useState<"CASH" | "UPI" | "CARD">(
-    "CASH",
-  );
+  const [paymentMode, setPaymentMode] = useState<"CASH" | "UPI" | "CARD">("CASH");
   const [paidAmount, setPaidAmount] = useState("");
   const [isProcessing, setIsProcessing] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
@@ -183,7 +178,7 @@ export default function POSPage() {
     }
   }, [searchQuery, products]);
 
-  // ---------- Cart Functions ----------
+  // ---------- Cart Functions (GST-inclusive) ----------
   const addToCart = (product: Product) => {
     if (product.currentStock <= 0) {
       alert("Product is out of stock");
@@ -198,8 +193,11 @@ export default function POSPage() {
       }
       updateQuantity(product.id, existingItem.quantity + 1);
     } else {
-      const taxableAmount = product.sellingPrice;
-      const gstAmount = taxableAmount * (product.gstRate / 100);
+      // --- GST inclusive selling price ---
+      const sellingPrice = product.sellingPrice;                    // inclusive
+      const basePrice = sellingPrice / (1 + product.gstRate / 100); // taxable value
+      const gstAmount = sellingPrice - basePrice;                   // GST per unit
+
       setCart([
         ...cart,
         {
@@ -207,11 +205,10 @@ export default function POSPage() {
           productName: product.name,
           quantity: 1,
           mrp: product.mrp,
-          sellingPrice: product.sellingPrice,
+          sellingPrice,
           discount: 0,
           gstRate: product.gstRate,
           gstAmount,
-          total: product.sellingPrice + gstAmount,
         },
       ]);
     }
@@ -236,20 +233,9 @@ export default function POSPage() {
     }
 
     setCart(
-      cart.map((item) => {
-        if (item.productId === productId) {
-          const taxableAmount =
-            item.sellingPrice * quantity - (item.discount || 0);
-          const gstAmount = taxableAmount * (item.gstRate / 100);
-          return {
-            ...item,
-            quantity,
-            gstAmount,
-            total: taxableAmount + gstAmount,
-          };
-        }
-        return item;
-      }),
+      cart.map((item) =>
+        item.productId === productId ? { ...item, quantity } : item,
+      ),
     );
   };
 
@@ -257,13 +243,17 @@ export default function POSPage() {
     setCart(cart.filter((item) => item.productId !== productId));
   };
 
-  // ---------- Totals ----------
+  // ---------- Totals (with discount) ----------
   const subtotal = cart.reduce(
     (sum, item) => sum + item.sellingPrice * item.quantity,
     0,
   );
-  const totalGst = cart.reduce((sum, item) => sum + item.gstAmount, 0);
-  const grandTotal = subtotal + totalGst;
+  const totalDiscount = cart.reduce((sum, item) => sum + item.discount, 0);
+  const totalGst = cart.reduce(
+    (sum, item) => sum + item.gstAmount * item.quantity,
+    0,
+  );
+  const grandTotal = subtotal - totalDiscount;
   const dueAmount = grandTotal - (parseFloat(paidAmount) || 0);
 
   // ---------- Checkout ----------
@@ -279,7 +269,15 @@ export default function POSPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          items: cart,
+          items: cart.map((item) => ({
+            productId: item.productId,
+            productName: item.productName,
+            quantity: item.quantity,
+            sellingPrice: item.sellingPrice,   // inclusive
+            discount: item.discount,
+            gstRate: item.gstRate,
+            gstAmount: item.gstAmount,        // per unit
+          })),
           customerId: selectedCustomer?.id,
           customerName: selectedCustomer?.name || "Walk-in Customer",
           customerPhone: selectedCustomer?.phone,
@@ -340,323 +338,124 @@ export default function POSPage() {
 <html>
 <head>
 <title>Receipt</title>
-
 <style>
-  @page {
-    size: 80mm auto;
-    margin: 0;
-  }
-
-  html,
-  body {
-    width: 80mm;
-    margin: 0;
-    padding: 0;
-    font-family: monospace;
-    background: white;
-  }
-
-  body {
-    padding: 4mm;
-    box-sizing: border-box;
-  }
-
-  .receipt {
-    width: 72mm;
-    margin: 0 auto;
-    font-size: 12px;
-    color: black;
-  }
-
-  .center {
-    text-align: center;
-  }
-
-  .bold {
-    font-weight: bold;
-  }
-
-  .line {
-    border-top: 1px dashed black;
-    margin: 4px 0;
-  }
-
-  table {
-    width: 100%;
-    border-collapse: collapse;
-    font-size: 11px;
-  }
-
-  th,
-  td {
-    padding: 2px 0;
-  }
-
-  .right {
-    text-align: right;
-  }
-
-  .total {
-    font-size: 14px;
-    font-weight: bold;
-  }
-
-  @media print {
-    html,
-    body {
-      width: 80mm;
-      height: auto;
-    }
-
-    body {
-      margin: 0;
-    }
-
-    .receipt {
-      width: 72mm;
-    }
-  }
+  @page { size: 80mm auto; margin: 0; }
+  html, body { width: 80mm; margin: 0; padding: 0; font-family: monospace; background: white; }
+  body { padding: 4mm; box-sizing: border-box; }
+  .receipt { width: 72mm; margin: 0 auto; font-size: 12px; color: black; }
+  .center { text-align: center; }
+  .bold { font-weight: bold; }
+  .line { border-top: 1px dashed black; margin: 4px 0; }
+  table { width: 100%; border-collapse: collapse; font-size: 11px; }
+  th, td { padding: 2px 0; }
+  .right { text-align: right; }
+  .total { font-size: 14px; font-weight: bold; }
+  @media print { html, body { width: 80mm; height: auto; } body { margin: 0; } .receipt { width: 72mm; } }
 </style>
 </head>
-
 <body>
-
-<div class="receipt">
-${receiptHtml}
-</div>
-
-<script>
-window.onload = () => {
-  window.print();
-};
-</script>
-
+<div class="receipt">${receiptHtml}</div>
+<script>window.onload = () => { window.print(); };</script>
 </body>
 </html>
 `);
     doc.close();
   };
 
-  // ---------- PDF Generation (jsPDF only – fixed & robust) ----------
+  // ---------- PDF Generation (unchanged, uses completedSale data) ----------
   const handleSavePDF = async () => {
     if (!completedSale || !shopSettings) {
       toast.error("No sale data available");
       return;
     }
-
     const toastId = toast.loading("Generating PDF...");
-
     try {
-      const doc = new jsPDF({
-        orientation: "portrait",
-        unit: "mm",
-        format: [80, 120],
-      });
-
+      const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: [80, 120] });
       const pageWidth = 80;
       const margin = 4;
       let y = 8;
 
-      // ---------------- Helpers ----------------
-
-      const centerText = (
-        text: string,
-        size = 10,
-        style: "normal" | "bold" = "normal",
-      ) => {
+      const centerText = (text: string, size = 10, style: "normal" | "bold" = "normal") => {
         doc.setFont("courier", style);
         doc.setFontSize(size);
-
         const textWidth = doc.getTextWidth(text);
-
         doc.text(text, (pageWidth - textWidth) / 2, y);
-
         y += size * 0.5 + 1;
       };
-
-      const leftText = (
-        text: string,
-        size = 9,
-        style: "normal" | "bold" = "normal",
-      ) => {
+      const leftText = (text: string, size = 9, style: "normal" | "bold" = "normal") => {
         doc.setFont("courier", style);
         doc.setFontSize(size);
-
         doc.text(text, margin, y);
-
         y += size * 0.5 + 1;
       };
-
-      const twoColumn = (
-        left: string,
-        right: string,
-        size = 9,
-        style: "normal" | "bold" = "normal",
-      ) => {
+      const twoColumn = (left: string, right: string, size = 9, style: "normal" | "bold" = "normal") => {
         doc.setFont("courier", style);
         doc.setFontSize(size);
-
         doc.text(left, margin, y);
-
         const rightWidth = doc.getTextWidth(right);
-
         doc.text(right, pageWidth - margin - rightWidth, y);
-
         y += size * 0.5 + 1;
       };
-
       const dashedLine = () => {
         let x = margin;
-
-        while (x < pageWidth - margin) {
-          doc.line(x, y, x + 1.5, y);
-          x += 3;
-        }
-
+        while (x < pageWidth - margin) { doc.line(x, y, x + 1.5, y); x += 3; }
         y += 3;
       };
 
-      // ---------------- Header ----------------
-
-      centerText(
-        (shopSettings.shopName || "SHOP NAME").toUpperCase(),
-        12,
-        "bold",
-      );
-
-      if (shopSettings.address) {
-        centerText(shopSettings.address, 8);
-      }
-
-      if (shopSettings.phone) {
-        centerText(`Phone: ${shopSettings.phone}`, 8);
-      }
-
-      if (shopSettings.gstin) {
-        centerText(`GSTIN: ${shopSettings.gstin}`, 8);
-      }
-
+      centerText((shopSettings.shopName || "SHOP NAME").toUpperCase(), 12, "bold");
+      if (shopSettings.address) centerText(shopSettings.address, 8);
+      if (shopSettings.phone) centerText(`Phone: ${shopSettings.phone}`, 8);
+      if (shopSettings.gstin) centerText(`GSTIN: ${shopSettings.gstin}`, 8);
       dashedLine();
-
-      // ---------------- Invoice Info ----------------
 
       leftText(`Invoice: ${completedSale.invoiceNumber}`, 8);
-
-      leftText(
-        `Date: ${new Date(completedSale.createdAt).toLocaleString()}`,
-        8,
-      );
-
-      leftText(
-        `Customer: ${completedSale.customerName || "Walk-in Customer"}`,
-        8,
-      );
-
+      leftText(`Date: ${new Date(completedSale.createdAt).toLocaleString()}`, 8);
+      leftText(`Customer: ${completedSale.customerName || "Walk-in Customer"}`, 8);
       dashedLine();
-
-      // ---------------- Table Header ----------------
 
       doc.setFont("courier", "bold");
       doc.setFontSize(8);
-
       doc.text("Item", margin, y);
       doc.text("Qty", 42, y);
       doc.text("Rate", 54, y);
       doc.text("Amt", 70, y);
-
       y += 4;
-
-      // ---------------- Items ----------------
-
       doc.setFont("courier", "normal");
 
       completedSale.items.forEach((item: any) => {
-        const name =
-          item.productName.length > 18
-            ? item.productName.substring(0, 18) + ".."
-            : item.productName;
-
+        const name = item.productName.length > 18 ? item.productName.substring(0, 18) + ".." : item.productName;
         doc.text(name, margin, y);
-
         doc.text(String(item.quantity), 42, y);
-
         doc.text(Number(item.sellingPrice || 0).toFixed(0), 54, y);
-
         doc.text(Number(item.total || 0).toFixed(0), 70, y);
-
         y += 4;
       });
-
       dashedLine();
-
-      // ---------------- Totals ----------------
 
       twoColumn("Subtotal", Number(completedSale.subtotal || 0).toFixed(0), 9);
-
       twoColumn("GST", Number(completedSale.totalGst || 0).toFixed(0), 9);
-
       if ((completedSale.totalDiscount || 0) > 0) {
-        twoColumn(
-          "Discount",
-          Number(completedSale.totalDiscount || 0).toFixed(0),
-          9,
-        );
+        twoColumn("Discount", Number(completedSale.totalDiscount || 0).toFixed(0), 9);
       }
-
-      // double line
-      doc.line(margin, y, pageWidth - margin, y);
-
-      y += 1.5;
-
-      doc.line(margin, y, pageWidth - margin, y);
-
-      y += 4;
-
-      twoColumn(
-        "TOTAL",
-        Number(completedSale.grandTotal || 0).toFixed(0),
-        11,
-        "bold",
-      );
-
+      doc.line(margin, y, pageWidth - margin, y); y += 1.5;
+      doc.line(margin, y, pageWidth - margin, y); y += 4;
+      twoColumn("TOTAL", Number(completedSale.grandTotal || 0).toFixed(0), 11, "bold");
       y += 2;
-
-      // ---------------- Payment ----------------
-
       twoColumn("Paid", Number(completedSale.paidAmount || 0).toFixed(0), 8);
-
       twoColumn("Due", Number(completedSale.dueAmount || 0).toFixed(0), 8);
-
       dashedLine();
-
-      // ---------------- Footer ----------------
-
       centerText("Thank You For Your Purchase!", 8);
-
       centerText("Visit Again", 8);
-
       y += 4;
-
-      // ---------------- Auto Page Height ----------------
 
       const finalHeight = y + 5;
-
       (doc as any).internal.pageSize.height = finalHeight;
       (doc as any).internal.pageSize.width = 80;
-
-      // ---------------- Save ----------------
-
       doc.save(`Invoice-${completedSale.invoiceNumber}.pdf`);
-
-      toast.success("PDF downloaded successfully", {
-        id: toastId,
-      });
+      toast.success("PDF downloaded successfully", { id: toastId });
     } catch (error) {
       console.error("PDF Error:", error);
-
-      toast.error("Failed to generate PDF", {
-        id: toastId,
-      });
+      toast.error("Failed to generate PDF", { id: toastId });
     }
   };
 
@@ -696,8 +495,6 @@ window.onload = () => {
     }).format(amount);
 
   // ---------- Render ----------
-
-  // ------------------------------------- render -------------------------------------
   return (
     <div className="h-screen flex flex-col overflow-hidden bg-background">
       {/* Header */}
@@ -707,12 +504,8 @@ window.onload = () => {
             <ShoppingCart className="w-4 h-4 text-primary" />
           </div>
           <div className="hidden sm:block">
-            <h1 className="text-sm font-bold text-foreground leading-tight">
-              POS Billing
-            </h1>
-            <p className="text-[8px] text-muted-foreground uppercase font-medium tracking-widest">
-              New Mandal
-            </p>
+            <h1 className="text-sm font-bold text-foreground leading-tight">POS Billing</h1>
+            <p className="text-[8px] text-muted-foreground uppercase font-medium tracking-widest">New Mandal</p>
           </div>
         </div>
 
@@ -720,19 +513,10 @@ window.onload = () => {
           {selectedCustomer ? (
             <div className="flex items-center justify-between gap-2 px-3 py-1 rounded-full bg-secondary border border-border shadow-inner group animate-in slide-in-from-top duration-300">
               <div className="flex flex-col items-start leading-none overflow-hidden">
-                <span className="text-[10px] font-bold text-foreground truncate w-full">
-                  {selectedCustomer.name}
-                </span>
-                <span className="text-[8px] text-muted-foreground">
-                  {selectedCustomer.phone}
-                </span>
+                <span className="text-[10px] font-bold text-foreground truncate w-full">{selectedCustomer.name}</span>
+                <span className="text-[8px] text-muted-foreground">{selectedCustomer.phone}</span>
               </div>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-6 w-6 rounded-full hover:bg-destructive/10 hover:text-destructive transition-colors shrink-0"
-                onClick={() => setSelectedCustomer(null)}
-              >
+              <Button variant="ghost" size="icon" className="h-6 w-6 rounded-full hover:bg-destructive/10 hover:text-destructive transition-colors shrink-0" onClick={() => setSelectedCustomer(null)}>
                 <Trash2 className="w-3 h-3" />
               </Button>
             </div>
@@ -759,12 +543,8 @@ window.onload = () => {
                         }}
                       >
                         <div className="flex flex-col">
-                          <span className="text-xs font-bold text-foreground group-hover/item:text-primary transition-colors">
-                            {c.name}
-                          </span>
-                          <span className="text-[10px] text-muted-foreground">
-                            {c.phone}
-                          </span>
+                          <span className="text-xs font-bold text-foreground group-hover/item:text-primary transition-colors">{c.name}</span>
+                          <span className="text-[10px] text-muted-foreground">{c.phone}</span>
                         </div>
                         <Plus className="w-3 h-3 text-muted-foreground group-hover/item:text-primary transition-colors" />
                       </div>
@@ -776,16 +556,9 @@ window.onload = () => {
           )}
         </div>
 
-        <Button
-          variant="outline"
-          size="sm"
-          className="h-8 rounded-full border-primary/20 text-primary hover:bg-primary/10 px-3"
-          onClick={() => setShowCustomerDialog(true)}
-        >
+        <Button variant="outline" size="sm" className="h-8 rounded-full border-primary/20 text-primary hover:bg-primary/10 px-3" onClick={() => setShowCustomerDialog(true)}>
           <Plus className="w-3 h-3 sm:mr-1" />
-          <span className="hidden sm:inline text-[10px] font-bold uppercase tracking-tighter">
-            NEW
-          </span>
+          <span className="hidden sm:inline text-[10px] font-bold uppercase tracking-tighter">NEW</span>
         </Button>
       </div>
 
@@ -816,21 +589,13 @@ window.onload = () => {
                             <Package className="w-4 h-4 text-muted-foreground" />
                           </div>
                           <div className="flex flex-col min-w-0">
-                            <span className="text-[10px] sm:text-xs font-bold text-foreground group-hover/prod:text-primary transition-colors truncate">
-                              {p.name}
-                            </span>
-                            <span className="text-[8px] sm:text-[10px] text-muted-foreground uppercase font-medium tracking-tighter">
-                              {p.barcode || "No barcode"}
-                            </span>
+                            <span className="text-[10px] sm:text-xs font-bold text-foreground group-hover/prod:text-primary transition-colors truncate">{p.name}</span>
+                            <span className="text-[8px] sm:text-[10px] text-muted-foreground uppercase font-medium tracking-tighter">{p.barcode || "No barcode"}</span>
                           </div>
                         </div>
                         <div className="text-right">
-                          <div className="text-xs sm:text-sm font-black text-primary">
-                            {formatCurrency(p.sellingPrice)}
-                          </div>
-                          <div className="text-[7px] sm:text-[8px] text-muted-foreground uppercase font-bold tracking-widest">
-                            Stock: {p.currentStock}
-                          </div>
+                          <div className="text-xs sm:text-sm font-black text-primary">{formatCurrency(p.sellingPrice)}</div>
+                          <div className="text-[7px] sm:text-[8px] text-muted-foreground uppercase font-bold tracking-widest">Stock: {p.currentStock}</div>
                         </div>
                       </div>
                     ))}
@@ -856,24 +621,15 @@ window.onload = () => {
                         <Package className="w-4 h-4 sm:w-5 sm:h-5 text-muted-foreground group-hover:text-primary transition-colors" />
                       </div>
                       <div className="flex flex-col min-w-0 flex-1">
-                        <h3 className="font-bold text-[10px] sm:text-xs text-foreground truncate group-hover:text-primary transition-colors leading-tight">
-                          {p.name}
-                        </h3>
+                        <h3 className="font-bold text-[10px] sm:text-xs text-foreground truncate group-hover:text-primary transition-colors leading-tight">{p.name}</h3>
                         <div className="flex items-center justify-between sm:justify-start gap-2 mt-0.5">
-                          <span className="text-[8px] sm:text-[10px] text-muted-foreground uppercase font-bold tracking-tighter truncate">
-                            {p.barcode || "No SKU"}
-                          </span>
-                          <span className="text-[9px] sm:text-[10px] font-black text-primary/80">
-                            {formatCurrency(p.sellingPrice)}
-                          </span>
+                          <span className="text-[8px] sm:text-[10px] text-muted-foreground uppercase font-bold tracking-tighter truncate">{p.barcode || "No SKU"}</span>
+                          <span className="text-[9px] sm:text-[10px] font-black text-primary/80">{formatCurrency(p.sellingPrice)}</span>
                         </div>
                       </div>
                     </div>
                     <div className="flex flex-row sm:flex-col items-center sm:items-end justify-between w-full sm:w-auto shrink-0 gap-1">
-                      <Badge
-                        variant="secondary"
-                        className="text-[8px] sm:text-[9px] px-1 sm:px-1.5 py-0 h-3.5 sm:h-4 font-bold bg-secondary/80"
-                      >
+                      <Badge variant="secondary" className="text-[8px] sm:text-[9px] px-1 sm:px-1.5 py-0 h-3.5 sm:h-4 font-bold bg-secondary/80">
                         {p.currentStock} {p.unit}
                       </Badge>
                       <div className="w-5 h-5 sm:w-6 sm:h-6 rounded-full bg-primary/10 text-primary flex items-center justify-center sm:scale-0 group-hover:scale-100 transition-transform">
@@ -891,14 +647,9 @@ window.onload = () => {
           <div className="px-4 py-2 border-b border-border/50 flex items-center justify-between bg-card/50">
             <div className="flex items-center gap-2">
               <ShoppingCart className="w-3.5 h-3.5 text-primary" />
-              <h2 className="font-black text-xs tracking-tight uppercase">
-                Order
-              </h2>
+              <h2 className="font-black text-xs tracking-tight uppercase">Order</h2>
             </div>
-            <Badge
-              variant="secondary"
-              className="rounded-full px-2 py-0.5 text-[10px] font-bold bg-primary text-primary-foreground"
-            >
+            <Badge variant="secondary" className="rounded-full px-2 py-0.5 text-[10px] font-bold bg-primary text-primary-foreground">
               {cart.length} ITEMS
             </Badge>
           </div>
@@ -907,9 +658,7 @@ window.onload = () => {
             {cart.length === 0 ? (
               <div className="h-full flex flex-col items-center justify-center text-muted-foreground p-6 text-center gap-3 opacity-30">
                 <ShoppingCart className="w-10 h-10" />
-                <p className="text-[10px] font-bold uppercase tracking-widest">
-                  Cart is Empty
-                </p>
+                <p className="text-[10px] font-bold uppercase tracking-widest">Cart is Empty</p>
               </div>
             ) : (
               <div className="p-2 space-y-2">
@@ -920,12 +669,8 @@ window.onload = () => {
                   >
                     <div className="flex justify-between items-start gap-2 mb-1">
                       <div className="flex flex-col pr-6">
-                        <span className="font-bold text-[10px] sm:text-[11px] leading-tight text-foreground line-clamp-1">
-                          {item.productName}
-                        </span>
-                        <span className="text-[7px] sm:text-[8px] text-muted-foreground font-bold uppercase tracking-widest mt-0.5">
-                          GST {item.gstRate}%
-                        </span>
+                        <span className="font-bold text-[10px] sm:text-[11px] leading-tight text-foreground line-clamp-1">{item.productName}</span>
+                        <span className="text-[7px] sm:text-[8px] text-muted-foreground font-bold uppercase tracking-widest mt-0.5">GST {item.gstRate}%</span>
                       </div>
                       <Button
                         variant="ghost"
@@ -936,38 +681,40 @@ window.onload = () => {
                         <Trash2 className="w-2.5 sm:w-3 h-2.5 sm:h-3" />
                       </Button>
                     </div>
+
+                    {/* Quantity controls + Discount input */}
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-1 bg-secondary/50 rounded-full p-0.5 border border-border/50">
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-5 w-5 sm:h-6 sm:w-6 rounded-full hover:bg-background"
-                          onClick={() =>
-                            updateQuantity(item.productId, item.quantity - 1)
-                          }
-                        >
+                        <Button variant="ghost" size="icon" className="h-5 w-5 sm:h-6 sm:w-6 rounded-full hover:bg-background" onClick={() => updateQuantity(item.productId, item.quantity - 1)}>
                           <Minus className="w-2 sm:w-2.5 h-2 sm:h-2.5" />
                         </Button>
-                        <span className="w-5 sm:w-6 text-center text-[10px] sm:text-[11px] font-black text-foreground">
-                          {item.quantity}
-                        </span>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-5 w-5 sm:h-6 sm:w-6 rounded-full hover:bg-background"
-                          onClick={() =>
-                            updateQuantity(item.productId, item.quantity + 1)
-                          }
-                        >
+                        <span className="w-5 sm:w-6 text-center text-[10px] sm:text-[11px] font-black text-foreground">{item.quantity}</span>
+                        <Button variant="ghost" size="icon" className="h-5 w-5 sm:h-6 sm:w-6 rounded-full hover:bg-background" onClick={() => updateQuantity(item.productId, item.quantity + 1)}>
                           <Plus className="w-2 sm:w-2.5 h-2 sm:h-2.5" />
                         </Button>
                       </div>
+
+                      {/* ---- Discount field ---- */}
+                      <div className="flex items-center gap-1">
+                        <Input
+                          type="number"
+                          placeholder="0"
+                          value={item.discount || ""}
+                          onChange={(e) => {
+                            const val = parseFloat(e.target.value) || 0;
+                            setCart(cart.map((i) => (i.productId === item.productId ? { ...i, discount: val } : i)));
+                          }}
+                          className="w-12 h-6 text-xs p-1 text-right rounded"
+                        />
+                        <span className="text-[8px] font-bold text-muted-foreground">disc</span>
+                      </div>
+
                       <div className="text-right">
                         <div className="font-black text-xs sm:text-sm text-primary">
-                          {formatCurrency(item.total)}
+                          {formatCurrency(item.sellingPrice * item.quantity - item.discount)}
                         </div>
                         <div className="text-[8px] sm:text-[9px] text-muted-foreground font-bold">
-                          {formatCurrency(item.sellingPrice)}/u
+                          {formatCurrency(item.sellingPrice)}/u (incl. GST)
                         </div>
                       </div>
                     </div>
@@ -977,24 +724,28 @@ window.onload = () => {
             )}
           </div>
 
+          {/* Totals & Checkout */}
           <div className="p-3 sm:p-4 bg-card border-t border-border shadow-2xl space-y-3">
             <div className="space-y-1">
               <div className="flex justify-between text-[9px] font-bold text-muted-foreground uppercase tracking-widest">
                 <span>Subtotal</span>
                 <span>{formatCurrency(subtotal)}</span>
               </div>
+              {totalDiscount > 0 && (
+                <div className="flex justify-between text-[9px] font-bold text-red-500 uppercase tracking-widest">
+                  <span>Discount</span>
+                  <span>-{formatCurrency(totalDiscount)}</span>
+                </div>
+              )}
               <div className="flex justify-between text-[9px] font-bold text-muted-foreground uppercase tracking-widest">
                 <span>Tax (GST)</span>
                 <span>{formatCurrency(totalGst)}</span>
               </div>
               <div className="flex justify-between items-end pt-1">
-                <span className="text-[10px] font-black text-foreground uppercase tracking-widest">
-                  Total
-                </span>
-                <span className="text-xl font-black text-primary leading-none">
-                  {formatCurrency(grandTotal)}
-                </span>
+                <span className="text-[10px] font-black text-foreground uppercase tracking-widest">Total</span>
+                <span className="text-xl font-black text-primary leading-none">{formatCurrency(grandTotal)}</span>
               </div>
+              <div className="text-[9px] text-muted-foreground text-right">(Prices include GST)</div>
             </div>
 
             <div className="grid grid-cols-3 gap-2">
@@ -1004,31 +755,23 @@ window.onload = () => {
                   variant={paymentMode === mode ? "default" : "outline"}
                   className={cn(
                     "h-10 rounded-xl flex flex-col gap-0.5 transition-all p-0",
-                    paymentMode === mode
-                      ? "shadow-md shadow-primary/20 scale-105"
-                      : "bg-card border-border/50",
+                    paymentMode === mode ? "shadow-md shadow-primary/20 scale-105" : "bg-card border-border/50",
                   )}
                   onClick={() => setPaymentMode(mode as any)}
                 >
                   {mode === "CASH" && <Banknote className="w-3.5 h-3.5" />}
                   {mode === "UPI" && <Smartphone className="w-3.5 h-3.5" />}
                   {mode === "CARD" && <CreditCard className="w-3.5 h-3.5" />}
-                  <span className="text-[8px] font-bold uppercase tracking-tighter">
-                    {mode}
-                  </span>
+                  <span className="text-[8px] font-bold uppercase tracking-tighter">{mode}</span>
                 </Button>
               ))}
             </div>
 
             <div className="space-y-1">
               <div className="flex items-center justify-between px-1">
-                <span className="text-[9px] font-black uppercase text-muted-foreground">
-                  Paid Amount
-                </span>
+                <span className="text-[9px] font-black uppercase text-muted-foreground">Paid Amount</span>
                 {dueAmount > 0 && (
-                  <span className="text-[9px] font-black text-destructive uppercase animate-pulse">
-                    Due: {formatCurrency(dueAmount)}
-                  </span>
+                  <span className="text-[9px] font-black text-destructive uppercase animate-pulse">Due: {formatCurrency(dueAmount)}</span>
                 )}
               </div>
               <div className="relative">
@@ -1067,38 +810,16 @@ window.onload = () => {
               <CheckCircle className="w-10 h-10 text-green-600" />
             </div>
             <div className="space-y-2">
-              <h2 className="text-2xl font-bold text-foreground">
-                Sale Completed!
-              </h2>
-              <p className="text-muted-foreground">
-                Invoice #{completedSale?.invoiceNumber}
-              </p>
+              <h2 className="text-2xl font-bold text-foreground">Sale Completed!</h2>
+              <p className="text-muted-foreground">Invoice #{completedSale?.invoiceNumber}</p>
             </div>
-            <div className="text-3xl font-bold text-primary">
-              {formatCurrency(completedSale?.grandTotal || 0)}
-            </div>
+            <div className="text-3xl font-bold text-primary">{formatCurrency(completedSale?.grandTotal || 0)}</div>
             <div className="flex flex-col gap-2 w-full pt-4">
               <div className="flex gap-2 w-full">
-                <Button
-                  variant="outline"
-                  className="flex-1"
-                  onClick={() => setShowSuccess(false)}
-                >
-                  New Sale
-                </Button>
-                <Button className="flex-1" onClick={handlePrint}>
-                  <Printer className="w-4 h-4 mr-2" />
-                  Print
-                </Button>
+                <Button variant="outline" className="flex-1" onClick={() => setShowSuccess(false)}>New Sale</Button>
+                <Button className="flex-1" onClick={handlePrint}><Printer className="w-4 h-4 mr-2" />Print</Button>
               </div>
-              <Button
-                variant="secondary"
-                className="w-full bg-blue-600 hover:bg-blue-700 text-white"
-                onClick={handleSavePDF}
-              >
-                <Download className="w-4 h-4 mr-2" />
-                Save as PDF
-              </Button>
+              <Button variant="secondary" className="w-full bg-blue-600 hover:bg-blue-700 text-white" onClick={handleSavePDF}><Download className="w-4 h-4 mr-2" />Save as PDF</Button>
             </div>
           </div>
         </DialogContent>
@@ -1113,27 +834,13 @@ window.onload = () => {
           <div className="space-y-4 py-4">
             <div className="space-y-2">
               <Label htmlFor="cust-name">Customer Name</Label>
-              <Input
-                id="cust-name"
-                value={newCustomer.name}
-                onChange={(e) =>
-                  setNewCustomer({ ...newCustomer, name: e.target.value })
-                }
-              />
+              <Input id="cust-name" value={newCustomer.name} onChange={(e) => setNewCustomer({ ...newCustomer, name: e.target.value })} />
             </div>
             <div className="space-y-2">
               <Label htmlFor="cust-phone">Phone Number</Label>
-              <Input
-                id="cust-phone"
-                value={newCustomer.phone}
-                onChange={(e) =>
-                  setNewCustomer({ ...newCustomer, phone: e.target.value })
-                }
-              />
+              <Input id="cust-phone" value={newCustomer.phone} onChange={(e) => setNewCustomer({ ...newCustomer, phone: e.target.value })} />
             </div>
-            <Button className="w-full" onClick={handleNewCustomer}>
-              Save Customer
-            </Button>
+            <Button className="w-full" onClick={handleNewCustomer}>Save Customer</Button>
           </div>
         </DialogContent>
       </Dialog>
