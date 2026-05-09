@@ -421,16 +421,43 @@ export default function POSPage() {
       );
 
       receiptElement.innerHTML = `
-        <div style="width: 80mm; padding: 10px; font-family: monospace;">
+        <style>
+          .receipt-container { width: 80mm; padding: 10px; font-family: monospace; background: white; color: black; }
+          .text-center { text-align: center; }
+          .flex { display: flex; }
+          .justify-between { justify-content: space-between; }
+          .font-bold { font-weight: bold; }
+          .border-t { border-top: 1px dashed black; }
+          .border-b { border-bottom: 1px dashed black; }
+          .border-double { border-top: 3px double black; }
+          .my-1 { margin-top: 4px; margin-bottom: 4px; }
+          .my-2 { margin-top: 8px; margin-bottom: 8px; }
+          .py-1 { padding-top: 4px; padding-bottom: 4px; }
+          .mt-2 { margin-top: 8px; }
+          .mt-4 { margin-top: 16px; }
+          .w-full { width: 100%; }
+          .text-left { text-align: left; }
+          .text-right { text-align: right; }
+          .uppercase { text-transform: uppercase; }
+          table { width: 100%; border-collapse: collapse; }
+          th, td { font-size: 11px; }
+          h1 { margin: 0; font-size: 14px; }
+          p { margin: 2px 0; }
+        </style>
+        <div class="receipt-container">
           ${receiptHtml}
         </div>
       `;
 
+      // Wait a bit for styles to apply
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
       const canvas = await html2canvas(receiptElement, {
-        scale: 3,
+        scale: 2,
         useCORS: true,
         logging: false,
         backgroundColor: "#ffffff",
+        windowWidth: 800, // Fixed width for better rendering
       });
 
       const imgData = canvas.toDataURL("image/png");
