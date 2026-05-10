@@ -124,22 +124,20 @@ export async function generatePDF({
     dashedLine();
 
     // ============================================
-    // TABLE COLUMNS – exact positions (mm)
-    // Sl.    : 3       (width 4)
-    // Item   : 7       (width 22)
-    // Qty    : 29      (width 6)
-    // Unit   : 35      (width 6)
-    // Rate   : 41      (width 7)
-    // Disc   : 48      (width 6)
-    // Amt    : 54 … 77 (right-aligned, width 23)
+    // NEW TABLE COLUMNS – balanced spacing
+    // Sl     : 3
+    // Item   : 7 … 41   (width 34 mm, fits ~23 chars)
+    // Qty    : 43       (width 5  mm)
+    // Rate   : 50       (width 11 mm, shows "47/pcs")
+    // Disc   : 63       (width 5  mm)
+    // Amt    : 77       (right edge, right‑aligned)
     // ============================================
     const colSl   = margin;               // 3
-    const colItem = colSl + 4;            // 7
-    const colQty  = colItem + 22;         // 29
-    const colUnit = colQty + 6;           // 35
-    const colRate = colUnit + 6;          // 41
-    const colDisc = colRate + 7;          // 48
-    const colAmt  = pageWidth - margin;   // 77 (right edge)
+    const colItem = 7;                    // 7
+    const colQty  = 43;                   // 43
+    const colRate = 50;                   // 50
+    const colDisc = 63;                   // 63
+    const colAmt  = pageWidth - margin;   // 77
 
     // ---------- table header ----------
     doc.setFont("courier", "bold");
@@ -147,8 +145,7 @@ export async function generatePDF({
     doc.text("Sl.", colSl, y);
     doc.text("Item", colItem, y);
     doc.text("Qty", colQty, y);
-    doc.text("Unit", colUnit, y);
-    doc.text("Rate", colRate, y);
+    doc.text("Rate", colRate, y);        // “Rate” now includes unit
     doc.text("Disc", colDisc, y);
     doc.text("Amt", colAmt, y, { align: "right" });
     y += 4;
@@ -159,10 +156,10 @@ export async function generatePDF({
       doc.setFontSize(7);
 
       const slNo = index + 1;
-      // Fit item name inside 22 mm (≈15 chars at 7pt)
+      // Item name can now hold ~23 characters
       const itemName =
-        item.productName.length > 15
-          ? item.productName.substring(0, 15) + ".."
+        item.productName.length > 23
+          ? item.productName.substring(0, 23) + ".."
           : item.productName;
       const itemTotal =
         item.total ??
@@ -174,13 +171,16 @@ export async function generatePDF({
       doc.text(itemName, colItem, y);
       // Quantity
       doc.text(String(item.quantity), colQty, y);
-      // Unit of measurement (empty string if missing)
-      doc.text(item.unit ?? "", colUnit, y);
-      // Selling price (Rate)
-      doc.text(formatNumber(item.sellingPrice), colRate, y);
+      // Combined rate + unit (e.g. “47/pcs”)
+      const rateStr = `${formatNumber(item.sellingPrice)}${item.unit ? '/' + item.unit : ''}`;
+      doc.text(rateStr, colRate, y);
       // Discount (or "-")
-      doc.text(item.discount && item.discount > 0 ? formatNumber(item.discount) : "-", colDisc, y);
-      // Line total, right-aligned
+      doc.text(
+        item.discount && item.discount > 0 ? formatNumber(item.discount) : "-",
+        colDisc,
+        y
+      );
+      // Line total, right‑aligned
       doc.text(formatNumber(itemTotal), colAmt, y, { align: "right" });
 
       y += 4;
@@ -199,7 +199,10 @@ export async function generatePDF({
     if ((completedSale.totalDiscount || 0) > 0) {
       twoColumn("Discount", "-" + formatNumber(completedSale.totalDiscount));
     }
-    twoColumn("Taxable", formatNumber(completedSale.subtotal - completedSale.totalDiscount));
+    twoColumn(
+      "Taxable",
+      formatNumber(completedSale.subtotal - completedSale.totalDiscount)
+    );
     twoColumn("GST", formatNumber(completedSale.totalGst));
     solidLine();
 
