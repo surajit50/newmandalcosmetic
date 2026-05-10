@@ -29,7 +29,6 @@ export default function POSPage() {
   // ---------- State ----------
   const [products, setProducts] = useState<Product[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
-  const [searchResults, setSearchResults] = useState<Product[]>([]);
   const [cart, setCart] = useState<CartItem[]>([]);
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
   const [customerSearch, setCustomerSearch] = useState("");
@@ -37,6 +36,7 @@ export default function POSPage() {
   const [paymentMode, setPaymentMode] = useState<PaymentMode>("CASH");
   const [paidAmount, setPaidAmount] = useState("");
   const [isProcessing, setIsProcessing] = useState(false);
+  const processingRef = useRef(false); // stricter double‑click lock
   const [showSuccess, setShowSuccess] = useState(false);
   const [completedSale, setCompletedSale] = useState<Sale | null>(null);
   const [showCustomerDialog, setShowCustomerDialog] = useState(false);
@@ -46,6 +46,7 @@ export default function POSPage() {
   // Mobile‑only state
   const [cartOpen, setCartOpen] = useState(false);
   const [mobileCustomerOpen, setMobileCustomerOpen] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
 
   // Quick Bill state
   const [quickBillOpen, setQuickBillOpen] = useState(false);
@@ -89,7 +90,6 @@ export default function POSPage() {
     }
   };
 
-  // Fetch Quick Bill presets from DB
   const fetchPresets = async () => {
     setPresetsLoading(true);
     try {
@@ -107,6 +107,14 @@ export default function POSPage() {
     }
   };
 
+  // Detect mobile for toast positioning
+  useEffect(() => {
+    const check = () => setIsMobile(window.innerWidth <= 767);
+    check();
+    window.addEventListener("resize", check);
+    return () => window.removeEventListener("resize", check);
+  }, []);
+
   useEffect(() => {
     fetchProducts();
     fetchSettings();
@@ -118,85 +126,99 @@ export default function POSPage() {
     return () => clearTimeout(debounce);
   }, [customerSearch, fetchCustomers]);
 
-  useEffect(() => {
-    if (searchQuery.length >= 1) {
-      const q = searchQuery.toLowerCase();
-      setSearchResults(
-        products
-          .filter(p => p.name.toLowerCase().includes(q) || (p.barcode && p.barcode.includes(q)))
-          .slice(0, 10)
-      );
-    } else {
-      setSearchResults([]);
-    }
+  // Search results derived from query – no extra state
+  const searchResults = useMemo(() => {
+    if (searchQuery.length < 1) return [];
+    const q = searchQuery.toLowerCase();
+    return products
+      .filter(p => p.name.toLowerCase().includes(q) || (p.barcode && p.barcode.includes(q)))
+      .slice(0, 10);
   }, [searchQuery, products]);
 
   // Auto‑focus search on mobile for immediate scanning
   useEffect(() => {
-    const isMobile = window.matchMedia("(max-width: 767px)").matches;
     if (isMobile) {
       searchInputRef.current?.focus();
     }
-  }, []);
+  }, [isMobile]);
 
-  // ---------- Cart Operations ----------
-  const addToCart = (product: Product) => {
+  // Refocus search when mobile customer overlay closes
+  useEffect(() => {
+    if (!mobileCustomerOpen && isMobile) {
+      // small delay ensures the overlay is fully removed
+      setTimeout(() => searchInputRef.current?.focus(), 50);
+    }
+  }, [mobileCustomerOpen, isMobile]);
+
+  // ---------- Cart Operations (memoized) ----------
+  const addToCart = useCallback((product: Product) => {
     if (product.currentStock <= 0) {
-      toast.error("Product is out of stock", { duration: 2000 });
+      toast.error("Product is out of stock", { duration: 2000, position: isMobile ? "bottom-center" : "top-center" });
       return;
     }
-    const existing = cart.find(item => item.productId === product.id);
-    if (existing) {
-      if (existing.quantity >= product.currentStock) {
-        toast.error("Not enough stock available", { duration: 2000 });
-        return;
+    setCart(prev => {
+      const existing = prev.find(item => item.productId === product.id);
+      if (existing) {
+        if (existing.quantity >= product.currentStock) {
+          toast.error("Not enough stock available", { duration: 2000, position: isMobile ? "bottom-center" : "top-center" });
+          return prev;
+        }
+        return prev.map(item =>
+          item.productId === product.id ? { ...item, quantity: item.quantity + 1 } : item
+        );
+      } else {
+        return [
+          ...prev,
+          {
+            productId: product.id,
+            productName: product.name,
+            quantity: 1,
+            mrp: product.mrp,
+            sellingPrice: product.sellingPrice,
+            discount: 0,
+            gstRate: product.gstRate,
+          },
+        ];
       }
-      updateQuantity(product.id, existing.quantity + 1);
-    } else {
-      setCart([
-        ...cart,
-        {
-          productId: product.id,
-          productName: product.name,
-          quantity: 1,
-          mrp: product.mrp,
-          sellingPrice: product.sellingPrice,
-          discount: 0,
-          gstRate: product.gstRate,
-        },
-      ]);
-    }
+    });
     setSearchQuery("");
-    setSearchResults([]);
     toast.success(`${product.name} added to cart`, {
       duration: 1000,
-      position: "top-center",
+      position: isMobile ? "bottom-center" : "top-center",
     });
-  };
+  }, [isMobile]);
 
-  const updateQuantity = (productId: string, quantity: number) => {
-    if (quantity <= 0) return removeFromCart(productId);
-    const product = products.find(p => p.id === productId);
-    if (product && quantity > product.currentStock) {
-      toast.error("Not enough stock available", { duration: 2000 });
-      return;
+  const updateQuantity = useCallback((productId: string, quantity: number) => {
+    if (quantity <= 0) {
+      return removeFromCart(productId);
     }
-    setCart(cart.map(item => (item.productId === productId ? { ...item, quantity } : item)));
-  };
-
-  const removeFromCart = (productId: string) => {
-    setCart(cart.filter(item => item.productId !== productId));
-  };
-
-  const handleDiscountChange = (productId: string, raw: string) => {
-    const val = parseFloat(raw) || 0;
-    const item = cart.find(i => i.productId === productId);
-    if (!item) return;
-    const max = item.sellingPrice * item.quantity;
     setCart(prev =>
-      prev.map(i => (i.productId === productId ? { ...i, discount: Math.min(val, max) } : i))
+      prev.map(item => {
+        if (item.productId !== productId) return item;
+        const product = products.find(p => p.id === productId);
+        if (product && quantity > product.currentStock) {
+          toast.error("Not enough stock available", { duration: 2000, position: isMobile ? "bottom-center" : "top-center" });
+          return item;
+        }
+        return { ...item, quantity };
+      })
     );
-  };
+  }, [products, isMobile]);
+
+  const removeFromCart = useCallback((productId: string) => {
+    setCart(prev => prev.filter(item => item.productId !== productId));
+  }, []);
+
+  const handleDiscountChange = useCallback((productId: string, raw: string) => {
+    const val = parseFloat(raw) || 0;
+    setCart(prev =>
+      prev.map(item => {
+        if (item.productId !== productId) return item;
+        const max = item.sellingPrice * item.quantity;
+        return { ...item, discount: Math.min(val, max) };
+      })
+    );
+  }, []);
 
   // ---------- Computed Totals ----------
   const { subtotal, totalDiscount, totalGst, grandTotal, lineGstMap } = useMemo(() => {
@@ -227,8 +249,8 @@ export default function POSPage() {
   const dueAmount = grandTotal - paidAmountNum;
   const isOverpaid = paidAmountNum > grandTotal && grandTotal > 0;
 
-  // ---------- Checkout ----------
-  const handleCheckout = async () => {
+  // ---------- Checkout (main cart) ----------
+  const handleCheckout = useCallback(async () => {
     if (cart.length === 0) {
       toast.error("Cart is empty", { duration: 2000 });
       return;
@@ -237,6 +259,8 @@ export default function POSPage() {
       toast.error("Paid amount exceeds the total. Please adjust.", { duration: 3000 });
       return;
     }
+    if (processingRef.current) return; // double‑click lock
+    processingRef.current = true;
     setIsProcessing(true);
     try {
       const res = await fetch("/api/sales", {
@@ -276,17 +300,17 @@ export default function POSPage() {
       console.error(error);
       toast.error("Failed to process sale", { duration: 3000 });
     } finally {
+      processingRef.current = false;
       setIsProcessing(false);
     }
-  };
+  }, [cart, isOverpaid, selectedCustomer, paymentMode, paidAmount, grandTotal, fetchProducts]);
 
   // ---------- Quick Bill Helpers ----------
-  // Resolve preset items to full CartItem objects using real product data
   const resolvePresetItems = useCallback(
     (preset: QuickBillPreset): CartItem[] => {
       return preset.items
-        .map((pi) => {
-          const product = products.find((p) => p.id === pi.productId);
+        .map(pi => {
+          const product = products.find(p => p.id === pi.productId);
           if (!product) return null;
           return {
             productId: product.id,
@@ -303,10 +327,24 @@ export default function POSPage() {
     [products]
   );
 
-  const handleQuickBillCheckout = async (preset: QuickBillPreset) => {
+  const handleQuickBillCheckout = useCallback(async (preset: QuickBillPreset) => {
+    if (processingRef.current) return;
     const items = resolvePresetItems(preset);
-    if (items.length === 0) {
-      toast.error("Some products in this preset are no longer available");
+
+    // Stock validation
+    const missing: string[] = [];
+    for (const item of items) {
+      const product = products.find(p => p.id === item.productId);
+      if (!product) {
+        missing.push(`${item.productName} (product not found)`);
+      } else if (product.currentStock <= 0) {
+        missing.push(`${item.productName} (out of stock)`);
+      } else if (item.quantity > product.currentStock) {
+        missing.push(`${item.productName} (only ${product.currentStock} available)`);
+      }
+    }
+    if (missing.length > 0) {
+      toast.error(`Cannot complete: ${missing.join(", ")}`, { duration: 4000 });
       return;
     }
 
@@ -322,6 +360,7 @@ export default function POSPage() {
       return;
     }
 
+    processingRef.current = true;
     setIsProcessing(true);
     try {
       const res = await fetch("/api/sales", {
@@ -362,20 +401,27 @@ export default function POSPage() {
       console.error(error);
       toast.error("Network error", { duration: 3000 });
     } finally {
+      processingRef.current = false;
       setIsProcessing(false);
     }
-  };
+  }, [resolvePresetItems, products, paidAmountNum, paymentMode, selectedCustomer, fetchProducts, isMobile]);
 
   // ---------- Print & PDF ----------
-  const handlePrint = () => {
-    if (!completedSale || !shopSettings) return;
+  const handlePrint = useCallback(() => {
+    if (!completedSale || !shopSettings) {
+      toast.error("Shop settings not loaded yet. Please wait.");
+      return;
+    }
     printReceipt({ completedSale, shopSettings, printFrameRef });
-  };
+  }, [completedSale, shopSettings]);
 
-  const handleSavePDF = () => {
-    if (!completedSale || !shopSettings) return;
+  const handleSavePDF = useCallback(() => {
+    if (!completedSale || !shopSettings) {
+      toast.error("Shop settings not loaded yet. Please wait.");
+      return;
+    }
     generatePDF({ completedSale, shopSettings });
-  };
+  }, [completedSale, shopSettings]);
 
   // ---------- New Customer ----------
   const handleNewCustomer = async () => {
@@ -383,6 +429,26 @@ export default function POSPage() {
       toast.error("Name and phone are required", { duration: 2000 });
       return;
     }
+    // Duplicate phone check
+    try {
+      const checkRes = await fetch(`/api/customers?search=${encodeURIComponent(newCustomer.phone)}`);
+      if (checkRes.ok) {
+        const existing = await checkRes.json();
+        if (existing.length > 0) {
+          const existingCust = existing[0];
+          setSelectedCustomer(existingCust);
+          setShowCustomerDialog(false);
+          setNewCustomer({ name: "", phone: "" });
+          setCustomerSearch("");
+          setMobileCustomerOpen(false);
+          toast.success(`Customer found: ${existingCust.name} – selected automatically.`, { duration: 3000 });
+          return;
+        }
+      }
+    } catch (error) {
+      // proceed anyway – network error shouldn't block creation
+    }
+
     try {
       const res = await fetch("/api/customers", {
         method: "POST",
@@ -405,6 +471,15 @@ export default function POSPage() {
       toast.error("Failed to create customer", { duration: 3000 });
     }
   };
+
+  // ---------- Quick Bill Modal Toggle with confirmation ----------
+  const openQuickBillModal = useCallback(() => {
+    if (cart.length > 0) {
+      if (!window.confirm("You have items in the main cart. Opening Quick Bill will not affect them. Continue?")) return;
+    }
+    setPaidAmount(""); // reset
+    setQuickBillOpen(true);
+  }, [cart.length]);
 
   // ---------- Shared Cart Content ----------
   const CartContent = () => (
@@ -461,6 +536,11 @@ export default function POSPage() {
   const QuickBillModal = () => {
     if (!quickBillOpen) return null;
 
+    const handlePresetSelect = (preset: QuickBillPreset) => {
+      setSelectedPreset(preset);
+      setPaidAmount(""); // reset paid amount when switching preset
+    };
+
     return (
       <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
         <div className="bg-card w-full max-w-md rounded-2xl shadow-2xl p-5 border">
@@ -472,10 +552,28 @@ export default function POSPage() {
               onClick={() => {
                 setQuickBillOpen(false);
                 setSelectedPreset(null);
+                setPaidAmount(""); // reset
               }}
             >
               <X className="w-5 h-5" />
             </Button>
+          </div>
+
+          {/* Customer info – read only */}
+          <div className="mb-4 text-sm flex items-center gap-2">
+            <span className="text-muted-foreground">Customer:</span>
+            <span className="font-medium">{selectedCustomer?.name || "Walk-in Customer"}</span>
+            {selectedCustomer?.phone && (
+              <span className="text-muted-foreground">({selectedCustomer.phone})</span>
+            )}
+            {selectedCustomer && (
+              <button
+                onClick={() => setSelectedCustomer(null)}
+                className="text-xs text-destructive hover:underline ml-auto"
+              >
+                Remove
+              </button>
+            )}
           </div>
 
           {/* Step 1: Choose a preset */}
@@ -494,7 +592,7 @@ export default function POSPage() {
               {quickBillPresets.map((preset) => (
                 <button
                   key={preset.id}
-                  onClick={() => setSelectedPreset(preset)}
+                  onClick={() => handlePresetSelect(preset)}
                   className="w-full text-left p-3 rounded-lg border hover:bg-muted transition-colors"
                 >
                   <div className="font-semibold">{preset.label}</div>
@@ -588,7 +686,11 @@ export default function POSPage() {
     <div className="fixed inset-0 z-50 bg-background flex flex-col md:hidden">
       <div className="flex items-center justify-between p-4 border-b">
         <h2 className="font-bold">Select Customer</h2>
-        <Button variant="ghost" size="icon" className="min-h-[44px] min-w-[44px]" onClick={() => setMobileCustomerOpen(false)}>
+        <Button variant="ghost" size="icon" className="min-h-[44px] min-w-[44px]" onClick={() => {
+          setMobileCustomerOpen(false);
+          setCustomerSearch("");
+          setCustomers([]);
+        }}>
           <X className="w-5 h-5" />
         </Button>
       </div>
@@ -657,8 +759,8 @@ export default function POSPage() {
         </div>
 
         <div className="flex items-center gap-2">
-          {/* Desktop Customer Selector */}
-          <div className="hidden md:block">
+          {/* Desktop Customer Selector + info */}
+          <div className="hidden md:flex items-center gap-2">
             <CustomerSelector
               selected={selectedCustomer}
               searchQuery={customerSearch}
@@ -672,13 +774,26 @@ export default function POSPage() {
               onClear={() => setSelectedCustomer(null)}
               onNewCustomer={() => setShowCustomerDialog(true)}
             />
+            {/* Extra display when a customer is selected (shows phone & clear) */}
+            {selectedCustomer && (
+              <div className="flex items-center gap-1 text-sm px-1">
+                <span className="text-muted-foreground">{selectedCustomer.phone}</span>
+                <button
+                  onClick={() => setSelectedCustomer(null)}
+                  className="text-xs text-destructive hover:underline"
+                  aria-label="Clear customer"
+                >
+                  ✕
+                </button>
+              </div>
+            )}
           </div>
 
           {/* Quick Bill Button */}
           <Button
             variant="secondary"
             size="sm"
-            onClick={() => setQuickBillOpen(true)}
+            onClick={openQuickBillModal}
             className="min-h-[44px] min-w-[44px]"
           >
             <Zap className="w-4 h-4 sm:mr-1" />
