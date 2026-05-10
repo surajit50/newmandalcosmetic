@@ -8,8 +8,8 @@ import { Trash2, Plus, Zap, Search } from "lucide-react";
 
 interface QuickBillItem {
   productId: string;
-  productName?: string;
-  quantity: number; // always number
+  productName?: string;       // used only in the form
+  quantity: number;
 }
 
 interface QuickBillPreset {
@@ -37,7 +37,28 @@ export default function QuickBillPresetsPage() {
   const [searchResults, setSearchResults] = useState<Record<number, ProductOption[]>>({});
   const [showDropdown, setShowDropdown] = useState<Record<number, boolean>>({});
 
-  // Fetch presets
+  // Cache of all product names (id -> name)
+  const [productNameMap, setProductNameMap] = useState<Record<string, string>>({});
+
+  // ---------- Data Fetching ----------
+
+  // Fetch all products once to build the name lookup
+  const fetchProductNames = useCallback(async () => {
+    try {
+      const res = await fetch("/api/products?limit=9999"); // adjust if you have an 'all' endpoint
+      if (res.ok) {
+        const products = await res.json();
+        const map: Record<string, string> = {};
+        products.forEach((p: any) => {
+          map[p.id] = p.name;
+        });
+        setProductNameMap(map);
+      }
+    } catch (error) {
+      console.error("Failed to load product names", error);
+    }
+  }, []);
+
   const fetchPresets = async () => {
     setLoading(true);
     try {
@@ -51,10 +72,11 @@ export default function QuickBillPresetsPage() {
   };
 
   useEffect(() => {
+    fetchProductNames();
     fetchPresets();
-  }, []);
+  }, [fetchProductNames]);
 
-  // Product search
+  // ---------- Product Search ----------
   const searchProducts = useCallback(async (index: number, query: string) => {
     setSearchTerms(prev => ({ ...prev, [index]: query }));
     if (query.length < 2) {
@@ -75,7 +97,7 @@ export default function QuickBillPresetsPage() {
     }
   }, []);
 
-  // Item handlers
+  // ---------- Item Handlers ----------
   const handleItemChange = (index: number, field: keyof QuickBillItem, value: string | number) => {
     const updated = [...items];
     if (field === "quantity") {
@@ -95,7 +117,7 @@ export default function QuickBillPresetsPage() {
   const removeItem = (index: number) => {
     if (items.length === 1) return;
     setItems(items.filter((_, i) => i !== index));
-    // Clean up search states
+    // Clean search states
     const newSearchTerms = { ...searchTerms };
     delete newSearchTerms[index];
     setSearchTerms(newSearchTerms);
@@ -116,13 +138,12 @@ export default function QuickBillPresetsPage() {
     setShowDropdown(prev => ({ ...prev, [index]: false }));
   };
 
-  // Create preset
+  // ---------- Create Preset ----------
   const handleCreate = async () => {
     if (!label.trim()) {
       toast.error("Label is required");
       return;
     }
-    // Check all items
     for (let i = 0; i < items.length; i++) {
       if (!items[i].productId.trim()) {
         toast.error(`Please select a product for row ${i + 1}`);
@@ -139,12 +160,11 @@ export default function QuickBillPresetsPage() {
       const res = await fetch("/api/quick-bill-presets", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        // Send only productId and quantity (discard productName)
         body: JSON.stringify({
           label: label.trim(),
           items: items.map(({ productId, quantity }) => ({
             productId: productId.trim(),
-            quantity: Number(quantity), // ensure number
+            quantity: Number(quantity),
           })),
         }),
       });
@@ -152,7 +172,7 @@ export default function QuickBillPresetsPage() {
         toast.success("Preset created!");
         setLabel("");
         setItems([{ productId: "", productName: "", quantity: 1 }]);
-        fetchPresets();
+        fetchPresets(); // refresh list
       } else {
         const data = await res.json();
         toast.error(data.error || "Failed to create preset");
@@ -164,6 +184,7 @@ export default function QuickBillPresetsPage() {
     }
   };
 
+  // ---------- Delete Preset ----------
   const handleDelete = async (id: string) => {
     if (!confirm("Delete this preset?")) return;
     try {
@@ -178,6 +199,11 @@ export default function QuickBillPresetsPage() {
     } catch {
       toast.error("Network error");
     }
+  };
+
+  // Helper: display product name from the lookup map
+  const getProductName = (productId: string) => {
+    return productNameMap[productId] || productId;
   };
 
   return (
@@ -278,7 +304,7 @@ export default function QuickBillPresetsPage() {
                 <ul className="text-xs text-muted-foreground mt-1">
                   {preset.items.map((item, i) => (
                     <li key={i}>
-                      {item.productName} × {item.quantity}
+                      {getProductName(item.productId)} × {item.quantity}
                     </li>
                   ))}
                 </ul>
