@@ -359,7 +359,7 @@ function DuesContent() {
                 <div className="grid grid-cols-3 gap-2">
                   <Button
                     type="button"
-                    variant={paymentMode === "cash" ? "default" : "outline"}
+                    variant={paymentMode === "CASH" ? "default" : "outline"}
                     size="sm"
                     onClick={() => setPaymentMode("cash")}
                     className="flex flex-col h-auto py-2"
@@ -369,7 +369,7 @@ function DuesContent() {
                   </Button>
                   <Button
                     type="button"
-                    variant={paymentMode === "upi" ? "default" : "outline"}
+                    variant={paymentMode === "UPI" ? "default" : "outline"}
                     size="sm"
                     onClick={() => setPaymentMode("upi")}
                     className="flex flex-col h-auto py-2"
@@ -379,7 +379,7 @@ function DuesContent() {
                   </Button>
                   <Button
                     type="button"
-                    variant={paymentMode === "bank" ? "default" : "outline"}
+                    variant={paymentMode === "BANK" ? "default" : "outline"}
                     size="sm"
                     onClick={() => setPaymentMode("bank")}
                     className="flex flex-col h-auto py-2"
