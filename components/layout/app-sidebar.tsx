@@ -29,6 +29,7 @@ import {
   Receipt,
   AlertCircle,
   X,
+  Zap
 } from "lucide-react";
 
 const navigation = [
@@ -47,6 +48,8 @@ const navigation = [
       { name: "Brands", href: "/dashboard/brands", icon: Tags },
       { name: "Inventory", href: "/dashboard/inventory", icon: Boxes },
       { name: "Low Stock", href: "/dashboard/low-stock", icon: AlertCircle },
+      // ADD THIS LINE
+      { name: "Quick Bill Presets", href: "/dashboard/admin/quick-bills", icon: Zap },
     ],
   },
   {
