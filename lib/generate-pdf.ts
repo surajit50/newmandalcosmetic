@@ -32,8 +32,8 @@ interface GeneratePDFParams {
 
 const formatNumber = (val: number) =>
   new Intl.NumberFormat("en-IN", {
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0,
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
   }).format(val);
 
 export async function generatePDF({
