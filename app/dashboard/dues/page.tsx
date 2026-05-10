@@ -1,23 +1,26 @@
 "use client";
 
-import { Suspense, useEffect, useState, useCallback } from "react";
+import {
+  Suspense,
+  useEffect,
+  useState,
+  useCallback,
+  useMemo,
+} from "react";
+
 import { useSearchParams } from "next/navigation";
+
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+
 import {
   Table,
   TableBody,
@@ -26,9 +29,23 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+
 import { Badge } from "@/components/ui/badge";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+
+import {
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+} from "@/components/ui/tabs";
+
 import {
   Loader2,
   CreditCard,
@@ -39,7 +56,13 @@ import {
   Banknote,
   Smartphone,
   CheckCircle,
+  AlertCircle,
+  RefreshCcw,
 } from "lucide-react";
+
+type PartyType = "customers" | "suppliers";
+
+type PaymentMode = "CASH" | "UPI" | "BANK";
 
 interface Party {
   id: string;
@@ -47,43 +70,101 @@ interface Party {
   phone: string;
   totalPurchases: number;
   totalDue: number;
-  type: "customers" | "suppliers";
+  type: PartyType;
 }
+
+const PAYMENT_MODES: {
+  value: PaymentMode;
+  label: string;
+  icon: React.ReactNode;
+}[] = [
+  {
+    value: "CASH",
+    label: "Cash",
+    icon: <Banknote className="w-4 h-4 mb-1" />,
+  },
+  {
+    value: "UPI",
+    label: "UPI",
+    icon: <Smartphone className="w-4 h-4 mb-1" />,
+  },
+  {
+    value: "BANK",
+    label: "Bank",
+    icon: <CreditCard className="w-4 h-4 mb-1" />,
+  },
+];
 
 function DuesContent() {
   const searchParams = useSearchParams();
-  const initialTab =
-    searchParams.get("type") === "suppliers" ? "suppliers" : "customers";
 
-  const [activeTab, setActiveTab] = useState(initialTab);
+  const initialTab: PartyType =
+    searchParams.get("type") === "suppliers"
+      ? "suppliers"
+      : "customers";
+
+  const [activeTab, setActiveTab] =
+    useState<PartyType>(initialTab);
+
   const [customers, setCustomers] = useState<Party[]>([]);
   const [suppliers, setSuppliers] = useState<Party[]>([]);
+
   const [isLoading, setIsLoading] = useState(true);
-  const [selectedParty, setSelectedParty] = useState<Party | null>(null);
-  const [isPaymentDialogOpen, setIsPaymentDialogOpen] = useState(false);
-  const [paymentAmount, setPaymentAmount] = useState("");
-  const [paymentMode, setPaymentMode] = useState("CASH");
-  const [notes, setNotes] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  const [error, setError] = useState("");
+
+  const [selectedParty, setSelectedParty] =
+    useState<Party | null>(null);
+
+  const [isPaymentDialogOpen, setIsPaymentDialogOpen] =
+    useState(false);
+
+  const [paymentAmount, setPaymentAmount] = useState("");
+
+  const [paymentMode, setPaymentMode] =
+    useState<PaymentMode>("CASH");
+
+  const [notes, setNotes] = useState("");
+
+  const resetPaymentForm = useCallback(() => {
+    setSelectedParty(null);
+    setPaymentAmount("");
+    setPaymentMode("CASH");
+    setNotes("");
+    setIsPaymentDialogOpen(false);
+  }, []);
+
+  const formatCurrency = useCallback((amount: number) => {
+    return new Intl.NumberFormat("en-IN", {
+      style: "currency",
+      currency: "INR",
+      maximumFractionDigits: 0,
+    }).format(amount);
+  }, []);
+
   const fetchDues = useCallback(async () => {
-    setIsLoading(true);
     try {
+      setIsLoading(true);
+      setError("");
+
       const [customersRes, suppliersRes] = await Promise.all([
         fetch("/api/dues?type=customers"),
         fetch("/api/dues?type=suppliers"),
       ]);
 
-      if (customersRes.ok) {
-        const data = await customersRes.json();
-        setCustomers(data);
+      if (!customersRes.ok || !suppliersRes.ok) {
+        throw new Error("Failed to fetch dues");
       }
-      if (suppliersRes.ok) {
-        const data = await suppliersRes.json();
-        setSuppliers(data);
-      }
+
+      const customersData = await customersRes.json();
+      const suppliersData = await suppliersRes.json();
+
+      setCustomers(customersData);
+      setSuppliers(suppliersData);
     } catch (error) {
-      console.error("Failed to fetch dues:", error);
+      console.error(error);
+      setError("Failed to load dues data");
     } finally {
       setIsLoading(false);
     }
@@ -93,192 +174,302 @@ function DuesContent() {
     fetchDues();
   }, [fetchDues]);
 
+  const totalCustomerDue = useMemo(() => {
+    return customers.reduce(
+      (sum, customer) => sum + customer.totalDue,
+      0,
+    );
+  }, [customers]);
+
+  const totalSupplierDue = useMemo(() => {
+    return suppliers.reduce(
+      (sum, supplier) => sum + supplier.totalDue,
+      0,
+    );
+  }, [suppliers]);
+
+  const openPaymentDialog = useCallback(
+    (party: Party) => {
+      setSelectedParty(party);
+      setIsPaymentDialogOpen(true);
+    },
+    [],
+  );
+
   const handlePayment = async () => {
-    if (!selectedParty || !paymentAmount) {
-      alert("Please enter payment amount");
+    if (!selectedParty) return;
+
+    const amount = Number(paymentAmount);
+
+    if (!amount || amount <= 0) {
+      alert("Please enter valid amount");
       return;
     }
 
-    const amount = parseFloat(paymentAmount);
-    if (amount <= 0 || amount > selectedParty.totalDue) {
-      alert("Invalid payment amount");
+    if (amount > selectedParty.totalDue) {
+      alert("Amount exceeds due");
       return;
     }
-
-    setIsSubmitting(true);
 
     try {
+      setIsSubmitting(true);
+
       const response = await fetch("/api/dues", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+        },
+
         body: JSON.stringify({
-          type: selectedParty.type === "customers" ? "customer" : "supplier",
+          type:
+            selectedParty.type === "customers"
+              ? "customer"
+              : "supplier",
+
           partyId: selectedParty.id,
-          amount: paymentAmount,
+          amount,
           paymentMode,
           notes,
         }),
       });
 
-      if (response.ok) {
-        setIsPaymentDialogOpen(false);
-        setSelectedParty(null);
-        setPaymentAmount("");
-        setNotes("");
-        fetchDues();
-      } else {
-        const data = await response.json();
-        alert(data.error || "Failed to record payment");
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(
+          data.error || "Failed to record payment",
+        );
       }
-    } catch (error) {
-      console.error("Payment error:", error);
-      alert("Failed to record payment");
+
+      resetPaymentForm();
+      fetchDues();
+    } catch (error: any) {
+      console.error(error);
+      alert(error.message || "Payment failed");
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat("en-IN", {
-      style: "currency",
-      currency: "INR",
-      maximumFractionDigits: 0,
-    }).format(amount);
-  };
+  const EmptyState = ({
+    type,
+  }: {
+    type: PartyType;
+  }) => (
+    <div className="flex flex-col items-center justify-center py-16 text-center">
+      {type === "customers" ? (
+        <Users className="w-14 h-14 text-muted-foreground opacity-50 mb-4" />
+      ) : (
+        <Truck className="w-14 h-14 text-muted-foreground opacity-50 mb-4" />
+      )}
 
-  const totalCustomerDue = customers.reduce((sum, c) => sum + c.totalDue, 0);
-  const totalSupplierDue = suppliers.reduce((sum, s) => sum + s.totalDue, 0);
+      <h3 className="text-lg font-semibold">
+        No Outstanding Dues
+      </h3>
+
+      <p className="text-sm text-muted-foreground mt-1">
+        {type === "customers"
+          ? "All customer payments are cleared"
+          : "All supplier payments are cleared"}
+      </p>
+    </div>
+  );
 
   const renderPartyTable = (
     parties: Party[],
-    type: "customers" | "suppliers",
+    type: PartyType,
   ) => {
     if (isLoading) {
       return (
-        <div className="flex items-center justify-center py-12">
+        <div className="flex items-center justify-center py-20">
           <Loader2 className="w-8 h-8 animate-spin text-primary" />
         </div>
       );
     }
 
-    if (parties.length === 0) {
-      return (
-        <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
-          {type === "customers" ? (
-            <Users className="w-12 h-12 mb-4 opacity-50" />
-          ) : (
-            <Truck className="w-12 h-12 mb-4 opacity-50" />
-          )}
-          <p>No outstanding dues</p>
-          <p className="text-sm">
-            {type === "customers"
-              ? "All customer payments are clear"
-              : "All supplier payments are clear"}
-          </p>
-        </div>
-      );
+    if (!parties.length) {
+      return <EmptyState type={type} />;
     }
 
     return (
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead>Name</TableHead>
-            <TableHead>Phone</TableHead>
-            <TableHead className="text-right">Total Business</TableHead>
-            <TableHead className="text-right">Due Amount</TableHead>
-            <TableHead className="text-right">Actions</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {parties.map((party) => (
-            <TableRow key={party.id}>
-              <TableCell className="font-medium">{party.name}</TableCell>
-              <TableCell>
-                <a
-                  href={`tel:${party.phone}`}
-                  className="flex items-center gap-1 text-primary hover:underline"
-                >
-                  <Phone className="w-3 h-3" />
-                  {party.phone}
-                </a>
-              </TableCell>
-              <TableCell className="text-right">
-                {formatCurrency(party.totalPurchases)}
-              </TableCell>
-              <TableCell className="text-right">
-                <Badge variant="destructive" className="text-base px-3">
-                  {formatCurrency(party.totalDue)}
-                </Badge>
-              </TableCell>
-              <TableCell className="text-right">
-                <Button
-                  size="sm"
-                  onClick={() => {
-                    setSelectedParty({ ...party, type });
-                    setIsPaymentDialogOpen(true);
-                  }}
-                >
-                  <IndianRupee className="w-4 h-4 mr-1" />
-                  Record Payment
-                </Button>
-              </TableCell>
+      <div className="rounded-lg border overflow-hidden">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Name</TableHead>
+
+              <TableHead>Phone</TableHead>
+
+              <TableHead className="text-right">
+                Total Business
+              </TableHead>
+
+              <TableHead className="text-right">
+                Due Amount
+              </TableHead>
+
+              <TableHead className="text-right">
+                Action
+              </TableHead>
             </TableRow>
-          ))}
-        </TableBody>
-      </Table>
+          </TableHeader>
+
+          <TableBody>
+            {parties.map((party) => (
+              <TableRow key={party.id}>
+                <TableCell className="font-medium">
+                  {party.name}
+                </TableCell>
+
+                <TableCell>
+                  <a
+                    href={`tel:${party.phone}`}
+                    className="flex items-center gap-1 text-primary hover:underline"
+                  >
+                    <Phone className="w-3 h-3" />
+                    {party.phone}
+                  </a>
+                </TableCell>
+
+                <TableCell className="text-right">
+                  {formatCurrency(
+                    party.totalPurchases,
+                  )}
+                </TableCell>
+
+                <TableCell className="text-right">
+                  <Badge
+                    variant="destructive"
+                    className="text-sm px-3 py-1"
+                  >
+                    {formatCurrency(party.totalDue)}
+                  </Badge>
+                </TableCell>
+
+                <TableCell className="text-right">
+                  <Button
+                    size="sm"
+                    onClick={() =>
+                      openPaymentDialog({
+                        ...party,
+                        type,
+                      })
+                    }
+                  >
+                    <IndianRupee className="w-4 h-4 mr-1" />
+                    Record Payment
+                  </Button>
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </div>
     );
   };
+
+  if (error) {
+    return (
+      <div className="p-6">
+        <Card>
+          <CardContent className="py-14">
+            <div className="flex flex-col items-center text-center">
+              <AlertCircle className="w-14 h-14 text-destructive mb-4" />
+
+              <h2 className="text-xl font-semibold">
+                Something went wrong
+              </h2>
+
+              <p className="text-muted-foreground mt-2">
+                {error}
+              </p>
+
+              <Button
+                className="mt-6"
+                onClick={fetchDues}
+              >
+                <RefreshCcw className="w-4 h-4 mr-2" />
+                Retry
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
   return (
     <div className="p-6 space-y-6">
       {/* Header */}
-      <div>
-        <h1 className="text-2xl font-bold text-foreground">Dues Management</h1>
-        <p className="text-muted-foreground">
-          Track and manage customer and supplier dues
-        </p>
+
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-3xl font-bold">
+            Dues Management
+          </h1>
+
+          <p className="text-muted-foreground mt-1">
+            Track and manage customer & supplier dues
+          </p>
+        </div>
+
+        <Button
+          variant="outline"
+          onClick={fetchDues}
+        >
+          <RefreshCcw className="w-4 h-4 mr-2" />
+          Refresh
+        </Button>
       </div>
 
       {/* Summary Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <Card className="border-border">
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+        <Card>
           <CardContent className="pt-6">
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm text-muted-foreground">
                   Due from Customers
                 </p>
-                <p className="text-3xl font-bold text-success">
+
+                <h2 className="text-3xl font-bold text-green-600 mt-1">
                   {formatCurrency(totalCustomerDue)}
-                </p>
-                <p className="text-sm text-muted-foreground mt-1">
-                  {customers.length} customer(s) with pending dues
+                </h2>
+
+                <p className="text-sm text-muted-foreground mt-2">
+                  {customers.length} customer(s)
+                  pending
                 </p>
               </div>
-              <div className="w-14 h-14 rounded-xl bg-success/10 flex items-center justify-center">
-                <Users className="w-7 h-7 text-success" />
+
+              <div className="w-14 h-14 rounded-xl bg-green-100 dark:bg-green-900/30 flex items-center justify-center">
+                <Users className="w-7 h-7 text-green-600" />
               </div>
             </div>
           </CardContent>
         </Card>
 
-        <Card className="border-border">
+        <Card>
           <CardContent className="pt-6">
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm text-muted-foreground">
                   Due to Suppliers
                 </p>
-                <p className="text-3xl font-bold text-destructive">
+
+                <h2 className="text-3xl font-bold text-red-600 mt-1">
                   {formatCurrency(totalSupplierDue)}
-                </p>
-                <p className="text-sm text-muted-foreground mt-1">
-                  {suppliers.length} supplier(s) with pending dues
+                </h2>
+
+                <p className="text-sm text-muted-foreground mt-2">
+                  {suppliers.length} supplier(s)
+                  pending
                 </p>
               </div>
-              <div className="w-14 h-14 rounded-xl bg-destructive/10 flex items-center justify-center">
-                <Truck className="w-7 h-7 text-destructive" />
+
+              <div className="w-14 h-14 rounded-xl bg-red-100 dark:bg-red-900/30 flex items-center justify-center">
+                <Truck className="w-7 h-7 text-red-600" />
               </div>
             </div>
           </CardContent>
@@ -286,132 +477,175 @@ function DuesContent() {
       </div>
 
       {/* Tabs */}
-      <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList>
-          <TabsTrigger value="customers" className="flex items-center gap-2">
-            <Users className="w-4 h-4" />
+
+      <Tabs
+        value={activeTab}
+        onValueChange={(value) =>
+          setActiveTab(value as PartyType)
+        }
+      >
+        <TabsList className="grid w-full grid-cols-2 max-w-md">
+          <TabsTrigger value="customers">
             Customers ({customers.length})
           </TabsTrigger>
-          <TabsTrigger value="suppliers" className="flex items-center gap-2">
-            <Truck className="w-4 h-4" />
+
+          <TabsTrigger value="suppliers">
             Suppliers ({suppliers.length})
           </TabsTrigger>
         </TabsList>
 
-        <Card className="mt-4 border-border">
+        <Card className="mt-5">
           <CardHeader>
-            <CardTitle className="text-lg">
-              {activeTab === "customers" ? "Customer Dues" : "Supplier Dues"}
+            <CardTitle>
+              {activeTab === "customers"
+                ? "Customer Dues"
+                : "Supplier Dues"}
             </CardTitle>
           </CardHeader>
+
           <CardContent>
-            <TabsContent value="customers" className="m-0">
-              {renderPartyTable(customers, "customers")}
+            <TabsContent
+              value="customers"
+              className="m-0"
+            >
+              {renderPartyTable(
+                customers,
+                "customers",
+              )}
             </TabsContent>
-            <TabsContent value="suppliers" className="m-0">
-              {renderPartyTable(suppliers, "suppliers")}
+
+            <TabsContent
+              value="suppliers"
+              className="m-0"
+            >
+              {renderPartyTable(
+                suppliers,
+                "suppliers",
+              )}
             </TabsContent>
           </CardContent>
         </Card>
       </Tabs>
 
       {/* Payment Dialog */}
-      <Dialog open={isPaymentDialogOpen} onOpenChange={setIsPaymentDialogOpen}>
-        <DialogContent>
+
+      <Dialog
+        open={isPaymentDialogOpen}
+        onOpenChange={(open) => {
+          if (!open) {
+            resetPaymentForm();
+          }
+
+          setIsPaymentDialogOpen(open);
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Record Payment</DialogTitle>
+            <DialogTitle>
+              Record Payment
+            </DialogTitle>
           </DialogHeader>
 
           {selectedParty && (
-            <div className="space-y-4">
-              <div className="p-4 bg-muted rounded-lg">
-                <div className="flex justify-between items-center">
+            <div className="space-y-5">
+              <div className="rounded-lg bg-muted p-4">
+                <div className="flex items-start justify-between">
                   <div>
-                    <p className="font-medium">{selectedParty.name}</p>
-                    <p className="text-sm text-muted-foreground">
+                    <h3 className="font-semibold">
+                      {selectedParty.name}
+                    </h3>
+
+                    <p className="text-sm text-muted-foreground mt-1">
                       {selectedParty.phone}
                     </p>
                   </div>
+
                   <div className="text-right">
-                    <p className="text-sm text-muted-foreground">
+                    <p className="text-xs text-muted-foreground">
                       Outstanding Due
                     </p>
-                    <p className="text-xl font-bold text-destructive">
-                      {formatCurrency(selectedParty.totalDue)}
-                    </p>
+
+                    <h2 className="text-xl font-bold text-destructive">
+                      {formatCurrency(
+                        selectedParty.totalDue,
+                      )}
+                    </h2>
                   </div>
                 </div>
               </div>
 
               <div className="space-y-2">
-                <Label>Payment Amount *</Label>
+                <Label>
+                  Payment Amount *
+                </Label>
+
                 <Input
                   type="number"
-                  placeholder={`Max: ${selectedParty.totalDue}`}
-                  value={paymentAmount}
-                  onChange={(e) => setPaymentAmount(e.target.value)}
+                  min={1}
                   max={selectedParty.totalDue}
+                  placeholder={`Maximum ${selectedParty.totalDue}`}
+                  value={paymentAmount}
+                  onChange={(e) =>
+                    setPaymentAmount(
+                      e.target.value,
+                    )
+                  }
                 />
               </div>
 
               <div className="space-y-2">
-                <Label>Payment Mode</Label>
+                <Label>
+                  Payment Mode
+                </Label>
+
                 <div className="grid grid-cols-3 gap-2">
-                  <Button
-                    type="button"
-                    variant={paymentMode === "CASH" ? "default" : "outline"}
-                    size="sm"
-                    onClick={() => setPaymentMode("CASH")}
-                    className="flex flex-col h-auto py-2"
-                  >
-                    <Banknote className="w-4 h-4 mb-1" />
-                    Cash
-                  </Button>
-                  <Button
-                    type="button"
-                    variant={paymentMode === "UPI" ? "default" : "outline"}
-                    size="sm"
-                    onClick={() => setPaymentMode("UPI")}
-                    className="flex flex-col h-auto py-2"
-                  >
-                    <Smartphone className="w-4 h-4 mb-1" />
-                    UPI
-                  </Button>
-                  <Button
-                    type="button"
-                    variant={paymentMode === "BANK" ? "default" : "outline"}
-                    size="sm"
-                    onClick={() => setPaymentMode("BANK")}
-                    className="flex flex-col h-auto py-2"
-                  >
-                    <CreditCard className="w-4 h-4 mb-1" />
-                    Bank
-                  </Button>
+                  {PAYMENT_MODES.map((mode) => (
+                    <Button
+                      key={mode.value}
+                      type="button"
+                      variant={
+                        paymentMode === mode.value
+                          ? "default"
+                          : "outline"
+                      }
+                      className="flex flex-col h-auto py-3"
+                      onClick={() =>
+                        setPaymentMode(mode.value)
+                      }
+                    >
+                      {mode.icon}
+                      {mode.label}
+                    </Button>
+                  ))}
                 </div>
               </div>
 
               <div className="space-y-2">
-                <Label>Notes (Optional)</Label>
+                <Label>
+                  Notes (Optional)
+                </Label>
+
                 <Input
-                  placeholder="Payment reference, cheque no., etc."
+                  placeholder="Cheque no, reference, remarks..."
                   value={notes}
-                  onChange={(e) => setNotes(e.target.value)}
+                  onChange={(e) =>
+                    setNotes(e.target.value)
+                  }
                 />
               </div>
 
-              <div className="flex justify-end gap-3 pt-4">
+              <div className="flex justify-end gap-3 pt-2">
                 <Button
                   variant="outline"
-                  onClick={() => {
-                    setIsPaymentDialogOpen(false);
-                    setSelectedParty(null);
-                    setPaymentAmount("");
-                    setNotes("");
-                  }}
+                  onClick={resetPaymentForm}
                 >
                   Cancel
                 </Button>
-                <Button onClick={handlePayment} disabled={isSubmitting}>
+
+                <Button
+                  onClick={handlePayment}
+                  disabled={isSubmitting}
+                >
                   {isSubmitting ? (
                     <>
                       <Loader2 className="w-4 h-4 mr-2 animate-spin" />
@@ -438,7 +672,7 @@ export default function DuesPage() {
     <Suspense
       fallback={
         <div className="flex items-center justify-center min-h-screen">
-          <Loader2 className="w-8 h-8 animate-spin text-primary" />
+          <Loader2 className="w-10 h-10 animate-spin text-primary" />
         </div>
       }
     >
