@@ -229,7 +229,7 @@ export async function generatePDF({
     // Footer
     // ===============================
     centerText("Thank You Visit Again", 8, "bold");
-    centerText("Software By New Mandal Cosmetic", 6);
+    centerText("Software By SS Software", 6);
 
     // ===============================
     // Save
