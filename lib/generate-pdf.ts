@@ -196,8 +196,8 @@ export async function generatePDF({
       const slNo = index + 1;
       // Item name can now be longer thanks to 31mm width
       const itemName =
-        item.productName.length > 24
-          ? item.productName.substring(0, 24) + ".."
+        item.productName.length > 20
+          ? item.productName.substring(0, 20) + ".."
           : item.productName;
       const itemTotal =
         item.total ??
