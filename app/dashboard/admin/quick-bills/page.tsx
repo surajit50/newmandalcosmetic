@@ -278,7 +278,7 @@ export default function QuickBillPresetsPage() {
                 <ul className="text-xs text-muted-foreground mt-1">
                   {preset.items.map((item, i) => (
                     <li key={i}>
-                      {item.productId} × {item.quantity}
+                      {item.productName} × {item.quantity}
                     </li>
                   ))}
                 </ul>
