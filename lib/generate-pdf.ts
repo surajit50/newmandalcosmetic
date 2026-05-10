@@ -335,7 +335,7 @@ export async function generatePDF({
     y += 2;
 
     center(
-      "Software by New Mandal Cosmetic",
+      "Software by SS Software",
       6
     );
 
