@@ -361,7 +361,7 @@ function DuesContent() {
                     type="button"
                     variant={paymentMode === "CASH" ? "default" : "outline"}
                     size="sm"
-                    onClick={() => setPaymentMode("cash")}
+                    onClick={() => setPaymentMode("CASH")}
                     className="flex flex-col h-auto py-2"
                   >
                     <Banknote className="w-4 h-4 mb-1" />
@@ -371,7 +371,7 @@ function DuesContent() {
                     type="button"
                     variant={paymentMode === "UPI" ? "default" : "outline"}
                     size="sm"
-                    onClick={() => setPaymentMode("upi")}
+                    onClick={() => setPaymentMode("UPI")}
                     className="flex flex-col h-auto py-2"
                   >
                     <Smartphone className="w-4 h-4 mb-1" />
@@ -381,7 +381,7 @@ function DuesContent() {
                     type="button"
                     variant={paymentMode === "BANK" ? "default" : "outline"}
                     size="sm"
-                    onClick={() => setPaymentMode("bank")}
+                    onClick={() => setPaymentMode("BANK")}
                     className="flex flex-col h-auto py-2"
                   >
                     <CreditCard className="w-4 h-4 mb-1" />
