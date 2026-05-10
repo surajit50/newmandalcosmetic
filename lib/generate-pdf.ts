@@ -1,6 +1,5 @@
 // lib/generate-pdf.ts
 import jsPDF from "jspdf";
-import autoTable from "jspdf-autotable";
 import { toast } from "sonner";
 
 interface GeneratePDFParams {
@@ -11,7 +10,7 @@ interface GeneratePDFParams {
     items: {
       productName: string;
       quantity: number;
-      unit?: string;
+      unit?: string;               // ← must be included from the product
       sellingPrice: number;
       discount?: number;
       total?: number;
@@ -47,205 +46,209 @@ export async function generatePDF({
     const doc = new jsPDF({
       orientation: "portrait",
       unit: "mm",
-      format: [80, 220],
+      format: [80, 200],
     });
 
     const pageWidth = 80;
     const margin = 3;
-    let y = 5;
+    let y = 4;
 
-    // ===============================
-    // Helpers
-    // ===============================
-    const centerText = (
-      text: string,
-      size = 10,
-      style: "normal" | "bold" = "normal"
-    ) => {
+    // ---------- helpers ----------
+    const centerText = (text: string, size = 10, style: "normal" | "bold" = "normal") => {
       doc.setFont("courier", style);
       doc.setFontSize(size);
-
-      const lines = doc.splitTextToSize(text, pageWidth - margin * 2);
-
-      lines.forEach((line: string) => {
-        const textWidth = doc.getTextWidth(line);
-        doc.text(line, (pageWidth - textWidth) / 2, y);
-        y += size * 0.38 + 1;
-      });
+      const textWidth = doc.getTextWidth(text);
+      doc.text(text, (pageWidth - textWidth) / 2, y);
+      y += size * 0.35 + 1;
     };
 
-    const leftText = (
-      text: string,
-      size = 8,
-      style: "normal" | "bold" = "normal"
-    ) => {
+    const leftText = (text: string, size = 8, style: "normal" | "bold" = "normal") => {
       doc.setFont("courier", style);
       doc.setFontSize(size);
-
-      const lines = doc.splitTextToSize(text, pageWidth - margin * 2);
-
-      lines.forEach((line: string) => {
-        doc.text(line, margin, y);
-        y += size * 0.38 + 1;
-      });
+      doc.text(text, margin, y);
+      y += size * 0.35 + 1.2;
     };
 
-    const line = () => {
-      doc.setDrawColor(0);
+    const rightText = (text: string, size = 8, style: "normal" | "bold" = "normal") => {
+      doc.setFont("courier", style);
+      doc.setFontSize(size);
+      const textWidth = doc.getTextWidth(text);
+      doc.text(text, pageWidth - margin - textWidth, y);
+    };
+
+    const twoColumn = (left: string, right: string, size = 8, style: "normal" | "bold" = "normal") => {
+      doc.setFont("courier", style);
+      doc.setFontSize(size);
+      doc.text(left, margin, y);
+      const rightWidth = doc.getTextWidth(right);
+      doc.text(right, pageWidth - margin - rightWidth, y);
+      y += size * 0.35 + 1.4;
+    };
+
+    const dashedLine = () => {
+      let x = margin;
+      while (x < pageWidth - margin) {
+        doc.line(x, y, x + 1.5, y);
+        x += 3;
+      }
+      y += 2.5;
+    };
+
+    const solidLine = () => {
       doc.line(margin, y, pageWidth - margin, y);
       y += 2;
     };
 
-    // ===============================
-    // Header
-    // ===============================
-    centerText(shopSettings.shopName || "SHOP NAME", 13, "bold");
+    // ---------- header ----------
+    centerText(shopSettings.shopName.toUpperCase(), 12, "bold");
+    if (shopSettings.address) centerText(shopSettings.address, 8);
+    if (shopSettings.phone) centerText(`Phone: ${shopSettings.phone}`, 8);
+    if (shopSettings.gstin) centerText(`GSTIN: ${shopSettings.gstin}`, 8);
+    dashedLine();
 
-    if (shopSettings.address) {
-      centerText(shopSettings.address, 7);
-    }
-
-    if (shopSettings.phone) {
-      centerText(`Ph: ${shopSettings.phone}`, 7);
-    }
-
-    if (shopSettings.gstin) {
-      centerText(`GSTIN: ${shopSettings.gstin}`, 7);
-    }
-
-    line();
-
-    // ===============================
-    // Invoice Info
-    // ===============================
-    leftText(`Invoice : ${completedSale.invoiceNumber}`, 8, "bold");
-
-    leftText(
-      `Date    : ${new Date(
-        completedSale.createdAt
-      ).toLocaleString("en-IN")}`,
+    // ---------- invoice details ----------
+    leftText(`Invoice: ${completedSale.invoiceNumber}`, 8);
+    const currentY = y;
+    rightText(
+      new Date(completedSale.createdAt).toLocaleString("en-IN", {
+        day: "2-digit",
+        month: "short",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+      }),
       8
     );
+    y = currentY + 3.5;
+    leftText(`Customer: ${completedSale.customerName || "Walk-in Customer"}`, 8);
+    dashedLine();
 
-    if (completedSale.customerName) {
-      leftText(`Customer: ${completedSale.customerName}`, 8);
-    }
+    // ============================================
+    // DYNAMIC COLUMN WIDTHS – disc expands, item shrinks
+    // ============================================
+    const colSl = margin;               // 3 mm
+    const colItem = 7;                  // fixed start for item name
 
-    line();
+    // Step 1 — measure maximum width of each column’s content
+    doc.setFont("courier", "normal");
+    doc.setFontSize(7);
+    const charWidth = doc.getTextWidth("A");
 
-    // ===============================
-    // Items Table
-    // ===============================
-    autoTable(doc, {
-      startY: y,
-      margin: {
-        left: margin,
-        right: margin,
-      },
-      theme: "plain",
-      styles: {
-        font: "courier",
-        fontSize: 7,
-        cellPadding: 1,
-        lineColor: [0, 0, 0],
-        textColor: [0, 0, 0],
-      },
-      headStyles: {
-        fontStyle: "bold",
-      },
-      columnStyles: {
-        0: { cellWidth: 26 },
-        1: { halign: "center", cellWidth: 10 },
-        2: { halign: "right", cellWidth: 16 },
-        3: { halign: "right", cellWidth: 20 },
-      },
-      head: [["Item", "Qty", "Rate", "Total"]],
-      body: completedSale.items.map((item) => {
-        const qtyText = `${item.quantity}${
-          item.unit ? " " + item.unit : ""
-        }`;
+    let maxQtyWidth = 0;
+    let maxRateWidth = 0;
+    let maxDiscWidth = 0;
+    let maxAmtWidth = 0;
 
-        return [
-          item.productName,
-          qtyText,
-          formatNumber(item.sellingPrice),
-          formatNumber(
-            item.total ??
-              item.quantity * item.sellingPrice - (item.discount || 0)
-          ),
-        ];
-      }),
-      didDrawPage: () => {},
+    completedSale.items.forEach((item) => {
+      const qtyStr = String(item.quantity);
+      const rateStr = `${formatNumber(item.sellingPrice)}${item.unit ? '/' + item.unit : ''}`;
+      const discStr = item.discount && item.discount > 0 ? formatNumber(item.discount) : "-";
+      const itemTotal = item.total ?? item.sellingPrice * item.quantity - (item.discount || 0);
+      const amtStr = formatNumber(itemTotal);
+
+      maxQtyWidth  = Math.max(maxQtyWidth,  doc.getTextWidth(qtyStr));
+      maxRateWidth = Math.max(maxRateWidth, doc.getTextWidth(rateStr));
+      maxDiscWidth = Math.max(maxDiscWidth, doc.getTextWidth(discStr));
+      maxAmtWidth  = Math.max(maxAmtWidth,  doc.getTextWidth(amtStr));
     });
 
-    y = (doc as any).lastAutoTable.finalY + 3;
+    const colAmt = pageWidth - margin;   // right edge (77 mm)
 
-    line();
+    // Step 2 — derive column positions from right to left
+    const padding = 1.5; // mm between columns
 
-    // ===============================
-    // Totals
-    // ===============================
-    const totalRow = (label: string, value: number, bold = false) => {
-      doc.setFont("courier", bold ? "bold" : "normal");
-      doc.setFontSize(8);
+    const amtLeft     = colAmt - maxAmtWidth;
+    const discEnd     = amtLeft - padding;
+    const discStart   = discEnd - maxDiscWidth;
 
-      doc.text(label, margin, y);
+    const rateEnd     = discStart - padding;
+    const rateStart   = rateEnd - maxRateWidth;
 
-      const valueText = formatNumber(value);
+    const qtyEnd      = rateStart - padding;
+    const qtyStart    = qtyEnd - maxQtyWidth;
 
-      doc.text(
-        valueText,
-        pageWidth - margin,
-        y,
-        { align: "right" }
-      );
+    // available width for the item name column
+    const itemWidth   = qtyStart - padding - colItem;
+    const maxItemChars = Math.max(1, Math.floor(itemWidth / charWidth));
 
-      y += 4.5;
-    };
+    // ---------- table header ----------
+    doc.setFont("courier", "bold");
+    doc.setFontSize(7);
+    doc.text("Sl.", colSl, y);
+    doc.text("Item", colItem, y);
+    doc.text("Qty", qtyStart, y);
+    doc.text("Rate", rateStart, y);
+    doc.text("Disc", discStart, y);
+    doc.text("Amt", colAmt, y, { align: "right" });
+    y += 4;
+    doc.setFont("courier", "normal");
 
-    totalRow("Subtotal", completedSale.subtotal);
+    // ---------- items ----------
+    completedSale.items.forEach((item, index) => {
+      doc.setFontSize(7);
 
-    if (completedSale.totalGst > 0) {
-      totalRow("GST", completedSale.totalGst);
+      const slNo = index + 1;
+      const itemName =
+        item.productName.length > maxItemChars
+          ? item.productName.substring(0, maxItemChars) + ".."
+          : item.productName;
+      const itemTotal =
+        item.total ?? item.sellingPrice * item.quantity - (item.discount || 0);
+      const rateStr = `${formatNumber(item.sellingPrice)}${item.unit ? '/' + item.unit : ''}`;
+      const discStr = item.discount && item.discount > 0 ? formatNumber(item.discount) : "-";
+
+      doc.text(String(slNo), colSl, y);
+      doc.text(itemName, colItem, y);
+      doc.text(String(item.quantity), qtyStart, y);
+      doc.text(rateStr, rateStart, y);
+      doc.text(discStr, discStart, y);
+      doc.text(formatNumber(itemTotal), colAmt, y, { align: "right" });
+
+      y += 4;
+
+      // Page break if needed
+      if (y > 185) {
+        doc.addPage([80, 200], "portrait");
+        y = 10;
+      }
+    });
+
+    dashedLine();
+
+    // ---------- totals ----------
+    twoColumn("Subtotal", formatNumber(completedSale.subtotal));
+    if ((completedSale.totalDiscount || 0) > 0) {
+      twoColumn("Discount", "-" + formatNumber(completedSale.totalDiscount));
     }
-
-    if (completedSale.totalDiscount > 0) {
-      totalRow("Discount", completedSale.totalDiscount);
-    }
-
-    line();
-
-    totalRow("Grand Total", completedSale.grandTotal, true);
-
-    line();
-
-    totalRow("Paid", completedSale.paidAmount);
-
-    totalRow("Due", completedSale.dueAmount, true);
-
-    line();
-
-    // ===============================
-    // Footer
-    // ===============================
-    centerText("Thank You Visit Again", 8, "bold");
-    centerText("Software By SS Software", 6);
-
-    // ===============================
-    // Save
-    // ===============================
-    doc.save(
-      `Invoice-${completedSale.invoiceNumber}.pdf`
+    twoColumn(
+      "Taxable",
+      formatNumber(completedSale.subtotal - completedSale.totalDiscount)
     );
+    twoColumn("GST", formatNumber(completedSale.totalGst));
+    solidLine();
 
-    toast.success("PDF Generated Successfully", {
-      id: toastId,
-    });
+    doc.setFont("courier", "bold");
+    doc.setFontSize(8);
+    doc.text("TOTAL", margin, y);
+    doc.text(formatNumber(completedSale.grandTotal), colAmt, y, { align: "right" });
+    y += 5;
+    dashedLine();
+
+    // ---------- payment ----------
+    twoColumn("Paid", formatNumber(completedSale.paidAmount));
+    twoColumn("Due", formatNumber(completedSale.dueAmount));
+    const change = completedSale.paidAmount - completedSale.grandTotal;
+    if (change > 0) twoColumn("Change", formatNumber(change));
+    dashedLine();
+
+    // ---------- footer ----------
+    centerText("Thank you for your purchase!", 8);
+    centerText("Visit Again", 8);
+
+    doc.save(`Invoice-${completedSale.invoiceNumber}.pdf`);
+    toast.success("PDF downloaded successfully", { id: toastId });
   } catch (error) {
-    console.error(error);
-
-    toast.error("Failed to Generate PDF", {
-      id: toastId,
-    });
+    console.error("PDF Error:", error);
+    toast.error("Failed to generate PDF", { id: toastId });
   }
 }
