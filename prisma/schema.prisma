@@ -217,6 +217,7 @@ model SaleItem {
   gstRate      Float
   gstAmount    Float
   total        Float
+unit          String  @default("pcs")
 }
 
 model StockTransaction {
