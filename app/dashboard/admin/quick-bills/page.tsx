@@ -4,11 +4,11 @@ import { useEffect, useState, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
-import { Trash2, Plus, Zap, Search } from "lucide-react";
+import { Trash2, Plus, Zap, Search, Pencil, X } from "lucide-react";
 
 interface QuickBillItem {
   productId: string;
-  productName?: string;       // used only in the form
+  productName?: string;
   quantity: number;
 }
 
@@ -32,20 +32,22 @@ export default function QuickBillPresetsPage() {
   ]);
   const [creating, setCreating] = useState(false);
 
+  // Edit mode
+  const [editingPreset, setEditingPreset] = useState<QuickBillPreset | null>(null);
+  const [updating, setUpdating] = useState(false);
+
   // Search states per row
   const [searchTerms, setSearchTerms] = useState<Record<number, string>>({});
   const [searchResults, setSearchResults] = useState<Record<number, ProductOption[]>>({});
   const [showDropdown, setShowDropdown] = useState<Record<number, boolean>>({});
 
-  // Cache of all product names (id -> name)
+  // Product name lookup
   const [productNameMap, setProductNameMap] = useState<Record<string, string>>({});
 
   // ---------- Data Fetching ----------
-
-  // Fetch all products once to build the name lookup
   const fetchProductNames = useCallback(async () => {
     try {
-      const res = await fetch("/api/products?limit=9999"); // adjust if you have an 'all' endpoint
+      const res = await fetch("/api/products?limit=9999");
       if (res.ok) {
         const products = await res.json();
         const map: Record<string, string> = {};
@@ -170,9 +172,8 @@ export default function QuickBillPresetsPage() {
       });
       if (res.ok) {
         toast.success("Preset created!");
-        setLabel("");
-        setItems([{ productId: "", productName: "", quantity: 1 }]);
-        fetchPresets(); // refresh list
+        resetForm();
+        fetchPresets();
       } else {
         const data = await res.json();
         toast.error(data.error || "Failed to create preset");
@@ -184,7 +185,83 @@ export default function QuickBillPresetsPage() {
     }
   };
 
-  // ---------- Delete Preset ----------
+  // ---------- Edit / Update ----------
+  const startEdit = (preset: QuickBillPreset) => {
+    setEditingPreset(preset);
+    setLabel(preset.label);
+    const presetItems = preset.items.map((item) => ({
+      productId: item.productId,
+      productName: productNameMap[item.productId] || item.productId,
+      quantity: item.quantity,
+    }));
+    setItems(presetItems);
+    // Clear search states
+    setSearchTerms({});
+    setSearchResults({});
+    setShowDropdown({});
+  };
+
+  const cancelEdit = () => {
+    setEditingPreset(null);
+    resetForm();
+  };
+
+  const resetForm = () => {
+    setLabel("");
+    setItems([{ productId: "", productName: "", quantity: 1 }]);
+    setSearchTerms({});
+    setSearchResults({});
+    setShowDropdown({});
+    setEditingPreset(null);
+  };
+
+  const handleUpdate = async () => {
+    if (!editingPreset) return;
+    if (!label.trim()) {
+      toast.error("Label is required");
+      return;
+    }
+    for (let i = 0; i < items.length; i++) {
+      if (!items[i].productId.trim()) {
+        toast.error(`Please select a product for row ${i + 1}`);
+        return;
+      }
+      if (items[i].quantity <= 0) {
+        toast.error(`Quantity for row ${i + 1} must be > 0`);
+        return;
+      }
+    }
+
+    setUpdating(true);
+    try {
+      const res = await fetch("/api/quick-bill-presets", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: editingPreset.id,
+          label: label.trim(),
+          items: items.map(({ productId, quantity }) => ({
+            productId: productId.trim(),
+            quantity: Number(quantity),
+          })),
+        }),
+      });
+      if (res.ok) {
+        toast.success("Preset updated!");
+        resetForm();
+        fetchPresets();
+      } else {
+        const data = await res.json();
+        toast.error(data.error || "Failed to update preset");
+      }
+    } catch {
+      toast.error("Network error");
+    } finally {
+      setUpdating(false);
+    }
+  };
+
+  // ---------- Delete ----------
   const handleDelete = async (id: string) => {
     if (!confirm("Delete this preset?")) return;
     try {
@@ -192,6 +269,7 @@ export default function QuickBillPresetsPage() {
       if (res.ok) {
         toast.success("Preset deleted");
         fetchPresets();
+        if (editingPreset?.id === id) resetForm();
       } else {
         const data = await res.json();
         toast.error(data.error || "Delete failed");
@@ -201,7 +279,7 @@ export default function QuickBillPresetsPage() {
     }
   };
 
-  // Helper: display product name from the lookup map
+  // Helper: get product name
   const getProductName = (productId: string) => {
     return productNameMap[productId] || productId;
   };
@@ -213,9 +291,12 @@ export default function QuickBillPresetsPage() {
         Quick Bill Presets
       </h1>
 
-      {/* Create Form */}
+      {/* Form */}
       <div className="border rounded-xl p-6 space-y-4 bg-card">
-        <h2 className="font-semibold">Create New Preset</h2>
+        <h2 className="font-semibold">
+          {editingPreset ? "Edit Preset" : "Create New Preset"}
+        </h2>
+
         <div>
           <label className="block text-sm mb-1">Label</label>
           <Input
@@ -281,9 +362,22 @@ export default function QuickBillPresetsPage() {
           </Button>
         </div>
 
-        <Button onClick={handleCreate} disabled={creating}>
-          {creating ? "Creating..." : "Create Preset"}
-        </Button>
+        <div className="flex gap-2">
+          {editingPreset ? (
+            <>
+              <Button onClick={handleUpdate} disabled={updating}>
+                {updating ? "Updating..." : "Update Preset"}
+              </Button>
+              <Button variant="outline" onClick={cancelEdit}>
+                Cancel
+              </Button>
+            </>
+          ) : (
+            <Button onClick={handleCreate} disabled={creating}>
+              {creating ? "Creating..." : "Create Preset"}
+            </Button>
+          )}
+        </div>
       </div>
 
       {/* Presets List */}
@@ -309,9 +403,14 @@ export default function QuickBillPresetsPage() {
                   ))}
                 </ul>
               </div>
-              <Button variant="ghost" size="icon" onClick={() => handleDelete(preset.id)}>
-                <Trash2 className="w-4 h-4 text-red-500" />
-              </Button>
+              <div className="flex items-center gap-2">
+                <Button variant="ghost" size="icon" onClick={() => startEdit(preset)}>
+                  <Pencil className="w-4 h-4" />
+                </Button>
+                <Button variant="ghost" size="icon" onClick={() => handleDelete(preset.id)}>
+                  <Trash2 className="w-4 h-4 text-red-500" />
+                </Button>
+              </div>
             </div>
           ))
         )}
