@@ -4,18 +4,18 @@ import { useEffect, useState, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
-import { Trash2, Plus, Zap, Search, X } from "lucide-react";
+import { Trash2, Plus, Zap, Search } from "lucide-react";
 
 interface QuickBillItem {
   productId: string;
-  productName?: string; // for display only
-  quantity: number;
+  productName?: string;
+  quantity: number; // always number
 }
 
 interface QuickBillPreset {
   id: string;
   label: string;
-  items: QuickBillItem[];
+  items: { productId: string; quantity: number }[];
 }
 
 interface ProductOption {
@@ -32,7 +32,7 @@ export default function QuickBillPresetsPage() {
   ]);
   const [creating, setCreating] = useState(false);
 
-  // Product search state (per item row)
+  // Search states per row
   const [searchTerms, setSearchTerms] = useState<Record<number, string>>({});
   const [searchResults, setSearchResults] = useState<Record<number, ProductOption[]>>({});
   const [showDropdown, setShowDropdown] = useState<Record<number, boolean>>({});
@@ -54,7 +54,7 @@ export default function QuickBillPresetsPage() {
     fetchPresets();
   }, []);
 
-  // Product search function using your existing /api/products endpoint
+  // Product search
   const searchProducts = useCallback(async (index: number, query: string) => {
     setSearchTerms(prev => ({ ...prev, [index]: query }));
     if (query.length < 2) {
@@ -75,10 +75,14 @@ export default function QuickBillPresetsPage() {
     }
   }, []);
 
-  // Item row handlers
-  const handleItemChange = (index: number, field: keyof QuickBillItem, value: any) => {
+  // Item handlers
+  const handleItemChange = (index: number, field: keyof QuickBillItem, value: string | number) => {
     const updated = [...items];
-    updated[index] = { ...updated[index], [field]: value };
+    if (field === "quantity") {
+      updated[index] = { ...updated[index], quantity: Number(value) };
+    } else {
+      updated[index] = { ...updated[index], [field]: value as string };
+    }
     setItems(updated);
   };
 
@@ -91,20 +95,15 @@ export default function QuickBillPresetsPage() {
   const removeItem = (index: number) => {
     if (items.length === 1) return;
     setItems(items.filter((_, i) => i !== index));
-    // Clean up search state
-    setSearchTerms(prev => {
-      const copy = { ...prev };
-      delete copy[index];
-      return copy;
-    });
-    setSearchResults(prev => {
-      const copy = { ...prev };
-      delete copy[index];
-      return copy;
-    });
+    // Clean up search states
+    const newSearchTerms = { ...searchTerms };
+    delete newSearchTerms[index];
+    setSearchTerms(newSearchTerms);
+    const newResults = { ...searchResults };
+    delete newResults[index];
+    setSearchResults(newResults);
   };
 
-  // Select a product for an item row
   const selectProduct = (index: number, product: ProductOption) => {
     const updated = [...items];
     updated[index] = {
@@ -123,13 +122,14 @@ export default function QuickBillPresetsPage() {
       toast.error("Label is required");
       return;
     }
-    for (const item of items) {
-      if (!item.productId.trim()) {
-        toast.error("Please select a product for each row");
+    // Check all items
+    for (let i = 0; i < items.length; i++) {
+      if (!items[i].productId.trim()) {
+        toast.error(`Please select a product for row ${i + 1}`);
         return;
       }
-      if (item.quantity <= 0) {
-        toast.error("Quantity must be > 0");
+      if (items[i].quantity <= 0) {
+        toast.error(`Quantity for row ${i + 1} must be > 0`);
         return;
       }
     }
@@ -139,9 +139,13 @@ export default function QuickBillPresetsPage() {
       const res = await fetch("/api/quick-bill-presets", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        // Send only productId and quantity (discard productName)
         body: JSON.stringify({
           label: label.trim(),
-          items: items.map(({ productId, quantity }) => ({ productId, quantity })),
+          items: items.map(({ productId, quantity }) => ({
+            productId: productId.trim(),
+            quantity: Number(quantity), // ensure number
+          })),
         }),
       });
       if (res.ok) {
@@ -186,7 +190,6 @@ export default function QuickBillPresetsPage() {
       {/* Create Form */}
       <div className="border rounded-xl p-6 space-y-4 bg-card">
         <h2 className="font-semibold">Create New Preset</h2>
-
         <div>
           <label className="block text-sm mb-1">Label</label>
           <Input
@@ -197,9 +200,9 @@ export default function QuickBillPresetsPage() {
         </div>
 
         <div>
-          <label className="block text-sm mb-2 flex items-center">
-            <Search className="w-4 h-4 mr-1" />
-            Products (search by name)
+          <label className="block text-sm mb-2 flex items-center gap-1">
+            <Search className="w-4 h-4" />
+            Products
           </label>
           {items.map((item, idx) => (
             <div key={idx} className="flex gap-2 mb-2 items-start relative">
@@ -217,7 +220,6 @@ export default function QuickBillPresetsPage() {
                         setShowDropdown(prev => ({ ...prev, [idx]: true }));
                     }}
                   />
-                  {/* Dropdown results */}
                   {showDropdown[idx] && searchResults[idx]?.length > 0 && (
                     <div className="absolute z-10 w-full bg-card border rounded-md shadow-lg mt-1 max-h-40 overflow-y-auto">
                       {searchResults[idx].map((product) => (
