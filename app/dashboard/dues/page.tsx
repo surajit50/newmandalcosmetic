@@ -62,7 +62,7 @@ function DuesContent() {
   const [selectedParty, setSelectedParty] = useState<Party | null>(null);
   const [isPaymentDialogOpen, setIsPaymentDialogOpen] = useState(false);
   const [paymentAmount, setPaymentAmount] = useState("");
-  const [paymentMode, setPaymentMode] = useState("cash");
+  const [paymentMode, setPaymentMode] = useState("CASH");
   const [notes, setNotes] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
