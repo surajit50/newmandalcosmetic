@@ -124,29 +124,61 @@ export async function generatePDF({
     dashedLine();
 
     // ============================================
-    // NEW TABLE COLUMNS – balanced spacing
-    // Sl     : 3
-    // Item   : 7 … 41   (width 34 mm, fits ~23 chars)
-    // Qty    : 43       (width 5  mm)
-    // Rate   : 50       (width 11 mm, shows "47/pcs")
-    // Disc   : 63       (width 5  mm)
-    // Amt    : 77       (right edge, right‑aligned)
+    // DYNAMIC COLUMN WIDTHS – disc expands, item shrinks
     // ============================================
-    const colSl   = margin;               // 3
-    const colItem = 7;                    // 7
-    const colQty  = 43;                   // 43
-    const colRate = 50;                   // 50
-    const colDisc = 63;                   // 63
-    const colAmt  = pageWidth - margin;   // 77
+    const colSl = margin;               // 3 mm
+    const colItem = 7;                  // fixed start for item name
+
+    // Step 1 — measure maximum width of each column’s content
+    doc.setFont("courier", "normal");
+    doc.setFontSize(7);
+    const charWidth = doc.getTextWidth("A");
+
+    let maxQtyWidth = 0;
+    let maxRateWidth = 0;
+    let maxDiscWidth = 0;
+    let maxAmtWidth = 0;
+
+    completedSale.items.forEach((item) => {
+      const qtyStr = String(item.quantity);
+      const rateStr = `${formatNumber(item.sellingPrice)}${item.unit ? '/' + item.unit : ''}`;
+      const discStr = item.discount && item.discount > 0 ? formatNumber(item.discount) : "-";
+      const itemTotal = item.total ?? item.sellingPrice * item.quantity - (item.discount || 0);
+      const amtStr = formatNumber(itemTotal);
+
+      maxQtyWidth  = Math.max(maxQtyWidth,  doc.getTextWidth(qtyStr));
+      maxRateWidth = Math.max(maxRateWidth, doc.getTextWidth(rateStr));
+      maxDiscWidth = Math.max(maxDiscWidth, doc.getTextWidth(discStr));
+      maxAmtWidth  = Math.max(maxAmtWidth,  doc.getTextWidth(amtStr));
+    });
+
+    const colAmt = pageWidth - margin;   // right edge (77 mm)
+
+    // Step 2 — derive column positions from right to left
+    const padding = 1.5; // mm between columns
+
+    const amtLeft     = colAmt - maxAmtWidth;
+    const discEnd     = amtLeft - padding;
+    const discStart   = discEnd - maxDiscWidth;
+
+    const rateEnd     = discStart - padding;
+    const rateStart   = rateEnd - maxRateWidth;
+
+    const qtyEnd      = rateStart - padding;
+    const qtyStart    = qtyEnd - maxQtyWidth;
+
+    // available width for the item name column
+    const itemWidth   = qtyStart - padding - colItem;
+    const maxItemChars = Math.max(1, Math.floor(itemWidth / charWidth));
 
     // ---------- table header ----------
     doc.setFont("courier", "bold");
     doc.setFontSize(7);
     doc.text("Sl.", colSl, y);
     doc.text("Item", colItem, y);
-    doc.text("Qty", colQty, y);
-    doc.text("Rate", colRate, y);        // “Rate” now includes unit
-    doc.text("Disc", colDisc, y);
+    doc.text("Qty", qtyStart, y);
+    doc.text("Rate", rateStart, y);
+    doc.text("Disc", discStart, y);
     doc.text("Amt", colAmt, y, { align: "right" });
     y += 4;
     doc.setFont("courier", "normal");
@@ -156,31 +188,20 @@ export async function generatePDF({
       doc.setFontSize(7);
 
       const slNo = index + 1;
-      // Item name can now hold ~23 characters
       const itemName =
-        item.productName.length > 23
-          ? item.productName.substring(0, 23) + ".."
+        item.productName.length > maxItemChars
+          ? item.productName.substring(0, maxItemChars) + ".."
           : item.productName;
       const itemTotal =
-        item.total ??
-        item.sellingPrice * item.quantity - (item.discount || 0);
-
-      // Serial number
-      doc.text(String(slNo), colSl, y);
-      // Product name
-      doc.text(itemName, colItem, y);
-      // Quantity
-      doc.text(String(item.quantity), colQty, y);
-      // Combined rate + unit (e.g. “47/pcs”)
+        item.total ?? item.sellingPrice * item.quantity - (item.discount || 0);
       const rateStr = `${formatNumber(item.sellingPrice)}${item.unit ? '/' + item.unit : ''}`;
-      doc.text(rateStr, colRate, y);
-      // Discount (or "-")
-      doc.text(
-        item.discount && item.discount > 0 ? formatNumber(item.discount) : "-",
-        colDisc,
-        y
-      );
-      // Line total, right‑aligned
+      const discStr = item.discount && item.discount > 0 ? formatNumber(item.discount) : "-";
+
+      doc.text(String(slNo), colSl, y);
+      doc.text(itemName, colItem, y);
+      doc.text(String(item.quantity), qtyStart, y);
+      doc.text(rateStr, rateStart, y);
+      doc.text(discStr, discStart, y);
       doc.text(formatNumber(itemTotal), colAmt, y, { align: "right" });
 
       y += 4;
