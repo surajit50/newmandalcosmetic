@@ -155,18 +155,26 @@ export async function generatePDF({
     dashedLine();
 
     // =========================
-    // TABLE HEADER – now includes "Sl."
+    // TABLE HEADER – ADJUSTED COLUMNS
     // =========================
+    // New column widths (in mm from left margin):
+    // Sl.     : 3  (width 5)
+    // Item    : 8  (width 31)
+    // Qty     : 39 (width 7)
+    // Rate    : 46 (width 7)
+    // Disc    : 53 (width 5)
+    // Amt     : 58 (width 19, right-aligned at 77)
+    // (page width 80, margin 3 → usable 74, sum: 5+31+7+7+5+19 = 74)
+
+    const colSl = margin;               // 3
+    const colItem = colSl + 5;          // 8
+    const colQty = colItem + 31;        // 39
+    const colRate = colQty + 7;         // 46
+    const colDisc = colRate + 7;        // 53
+    const colAmt = pageWidth - margin;  // 77 (right edge for amount)
 
     doc.setFont("courier", "bold");
     doc.setFontSize(7);
-
-    const colSl = margin;                // 3
-    const colItem = colSl + 5;           // 8
-    const colQty = colItem + 27;         // 35
-    const colRate = colQty + 8;          // 43
-    const colDisc = colRate + 9;         // 52
-    const colAmt = 76;                   // right‑aligned
 
     doc.text("Sl.", colSl, y);
     doc.text("Item", colItem, y);
@@ -176,7 +184,6 @@ export async function generatePDF({
     doc.text("Amt", colAmt, y, { align: "right" });
 
     y += 4;
-
     doc.setFont("courier", "normal");
 
     // =========================
@@ -187,25 +194,20 @@ export async function generatePDF({
       doc.setFontSize(7);
 
       const slNo = index + 1;
+      // Item name can now be longer thanks to 31mm width
       const itemName =
-        item.productName.length > 20
-          ? item.productName.substring(0, 20) + ".."
+        item.productName.length > 24
+          ? item.productName.substring(0, 24) + ".."
           : item.productName;
       const itemTotal =
         item.total ??
         item.sellingPrice * item.quantity - (item.discount || 0);
 
-      // Sl.
       doc.text(String(slNo), colSl, y);
-      // Item Name
       doc.text(itemName, colItem, y);
-      // Qty
       doc.text(String(item.quantity), colQty, y);
-      // Rate
       doc.text(formatNumber(item.sellingPrice), colRate, y);
-      // Discount
       doc.text(item.discount > 0 ? formatNumber(item.discount) : "-", colDisc, y);
-      // Amount (right‑aligned)
       doc.text(formatNumber(itemTotal), colAmt, y, { align: "right" });
 
       y += 4;
@@ -245,7 +247,7 @@ export async function generatePDF({
     doc.setFont("courier", "bold");
     doc.setFontSize(8);
     doc.text("TOTAL", margin, y);
-    doc.text(formatNumber(completedSale.grandTotal), 76, y, { align: "right" });
+    doc.text(formatNumber(completedSale.grandTotal), colAmt, y, { align: "right" });
     y += 5;
 
     dashedLine();
