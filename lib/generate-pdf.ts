@@ -162,10 +162,10 @@ export async function generatePDF({
     doc.setFontSize(7);
 
     const colSl = margin;                // 3
-    const colItem = colSl + 5;           // 8
+    const colItem = colSl + 10;           // 10
     const colQty = colItem + 27;         // 35
     const colRate = colQty + 8;          // 43
-    const colDisc = colRate + 9;         // 52
+    const colDisc = colRate + 5;         // 52
     const colAmt = 76;                   // right‑aligned
 
     doc.text("Sl.", colSl, y);
