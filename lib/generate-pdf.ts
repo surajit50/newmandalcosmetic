@@ -155,23 +155,23 @@ export async function generatePDF({
     dashedLine();
 
     // =========================
-    // TABLE HEADER – ADJUSTED COLUMNS
+    // TABLE HEADER – COLUMNS WITH UNIT
     // =========================
-    // New column widths (in mm from left margin):
-    // Sl.     : 3  (width 5)
-    // Item    : 8  (width 31)
-    // Qty     : 39 (width 7)
-    // Rate    : 46 (width 7)
-    // Disc    : 53 (width 5)
-    // Amt     : 58 (width 19, right-aligned at 77)
-    // (page width 80, margin 3 → usable 74, sum: 5+31+7+7+5+19 = 74)
-
-    const colSl = margin;               // 3
-    const colItem = colSl + 5;          // 8
-    const colQty = colItem + 31;        // 39
-    const colRate = colQty + 7;         // 46
-    const colDisc = colRate + 7;        // 53
-    const colAmt = pageWidth - margin;  // 77 (right edge for amount)
+    // New column layout (widths in mm, total = 74):
+    // Sl.   : 4
+    // Item  : 22
+    // Qty   : 6
+    // Unit  : 5
+    // Rate  : 6
+    // Disc  : 5
+    // Amt   : 26 (right-aligned)
+    const colSl = margin;                // 3
+    const colItem = colSl + 4;           // 7
+    const colQty = colItem + 22;         // 29
+    const colUnit = colQty + 6;          // 35
+    const colRate = colUnit + 5;         // 40
+    const colDisc = colRate + 6;         // 46
+    const colAmt = pageWidth - margin;   // 77 (right edge)
 
     doc.setFont("courier", "bold");
     doc.setFontSize(7);
@@ -179,6 +179,7 @@ export async function generatePDF({
     doc.text("Sl.", colSl, y);
     doc.text("Item", colItem, y);
     doc.text("Qty", colQty, y);
+    doc.text("Unit", colUnit, y);
     doc.text("Rate", colRate, y);
     doc.text("Disc", colDisc, y);
     doc.text("Amt", colAmt, y, { align: "right" });
@@ -187,17 +188,17 @@ export async function generatePDF({
     doc.setFont("courier", "normal");
 
     // =========================
-    // ITEMS – with serial number
+    // ITEMS – with unit column
     // =========================
 
     completedSale.items.forEach((item: any, index: number) => {
       doc.setFontSize(7);
 
       const slNo = index + 1;
-      // Item name can now be longer thanks to 31mm width
+      // Truncate name to fit 22 mm (~15 characters in Courier 7pt)
       const itemName =
-        item.productName.length > 20
-          ? item.productName.substring(0, 20) + ".."
+        item.productName.length > 15
+          ? item.productName.substring(0, 15) + ".."
           : item.productName;
       const itemTotal =
         item.total ??
@@ -206,6 +207,7 @@ export async function generatePDF({
       doc.text(String(slNo), colSl, y);
       doc.text(itemName, colItem, y);
       doc.text(String(item.quantity), colQty, y);
+      doc.text(item.unit ?? "", colUnit, y);                // added unit
       doc.text(formatNumber(item.sellingPrice), colRate, y);
       doc.text(item.discount > 0 ? formatNumber(item.discount) : "-", colDisc, y);
       doc.text(formatNumber(itemTotal), colAmt, y, { align: "right" });
