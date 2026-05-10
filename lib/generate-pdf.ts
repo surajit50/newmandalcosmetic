@@ -1,6 +1,6 @@
 // lib/generate-pdf.ts
-
 import jsPDF from "jspdf";
+import autoTable from "jspdf-autotable";
 import { toast } from "sonner";
 
 interface GeneratePDFParams {
@@ -41,7 +41,7 @@ export async function generatePDF({
   completedSale,
   shopSettings,
 }: GeneratePDFParams) {
-  const toastId = toast.loading("Generating Invoice...");
+  const toastId = toast.loading("Generating PDF...");
 
   try {
     const doc = new jsPDF({
@@ -51,309 +51,200 @@ export async function generatePDF({
     });
 
     const pageWidth = 80;
-    const margin = 4;
+    const margin = 3;
+    let y = 5;
 
-    let y = 6;
-
-    // =========================
+    // ===============================
     // Helpers
-    // =========================
-
-    const center = (
+    // ===============================
+    const centerText = (
       text: string,
-      size = 9,
-      bold = false
+      size = 10,
+      style: "normal" | "bold" = "normal"
     ) => {
-      doc.setFont("helvetica", bold ? "bold" : "normal");
+      doc.setFont("courier", style);
       doc.setFontSize(size);
 
-      const width = doc.getTextWidth(text);
+      const lines = doc.splitTextToSize(text, pageWidth - margin * 2);
 
-      doc.text(text, (pageWidth - width) / 2, y);
+      lines.forEach((line: string) => {
+        const textWidth = doc.getTextWidth(line);
+        doc.text(line, (pageWidth - textWidth) / 2, y);
+        y += size * 0.38 + 1;
+      });
+    };
 
-      y += size * 0.45;
+    const leftText = (
+      text: string,
+      size = 8,
+      style: "normal" | "bold" = "normal"
+    ) => {
+      doc.setFont("courier", style);
+      doc.setFontSize(size);
+
+      const lines = doc.splitTextToSize(text, pageWidth - margin * 2);
+
+      lines.forEach((line: string) => {
+        doc.text(line, margin, y);
+        y += size * 0.38 + 1;
+      });
     };
 
     const line = () => {
-      doc.setDrawColor(180);
+      doc.setDrawColor(0);
       doc.line(margin, y, pageWidth - margin, y);
-      y += 3;
+      y += 2;
     };
 
-    const row = (
-      left: string,
-      right: string,
-      bold = false,
-      size = 8
-    ) => {
-      doc.setFont("helvetica", bold ? "bold" : "normal");
-      doc.setFontSize(size);
-
-      doc.text(left, margin, y);
-
-      doc.text(right, pageWidth - margin, y, {
-        align: "right",
-      });
-
-      y += 4.2;
-    };
-
-    // =========================
-    // HEADER
-    // =========================
-
-    center(shopSettings.shopName.toUpperCase(), 13, true);
+    // ===============================
+    // Header
+    // ===============================
+    centerText(shopSettings.shopName || "SHOP NAME", 13, "bold");
 
     if (shopSettings.address) {
-      center(shopSettings.address, 7);
+      centerText(shopSettings.address, 7);
     }
 
     if (shopSettings.phone) {
-      center(`Phone: ${shopSettings.phone}`, 7);
+      centerText(`Ph: ${shopSettings.phone}`, 7);
     }
 
     if (shopSettings.gstin) {
-      center(`GSTIN: ${shopSettings.gstin}`, 7);
+      centerText(`GSTIN: ${shopSettings.gstin}`, 7);
     }
 
-    y += 1;
+    line();
+
+    // ===============================
+    // Invoice Info
+    // ===============================
+    leftText(`Invoice : ${completedSale.invoiceNumber}`, 8, "bold");
+
+    leftText(
+      `Date    : ${new Date(
+        completedSale.createdAt
+      ).toLocaleString("en-IN")}`,
+      8
+    );
+
+    if (completedSale.customerName) {
+      leftText(`Customer: ${completedSale.customerName}`, 8);
+    }
 
     line();
 
-    row("Invoice No", completedSale.invoiceNumber, true);
+    // ===============================
+    // Items Table
+    // ===============================
+    autoTable(doc, {
+      startY: y,
+      margin: {
+        left: margin,
+        right: margin,
+      },
+      theme: "plain",
+      styles: {
+        font: "courier",
+        fontSize: 7,
+        cellPadding: 1,
+        lineColor: [0, 0, 0],
+        textColor: [0, 0, 0],
+      },
+      headStyles: {
+        fontStyle: "bold",
+      },
+      columnStyles: {
+        0: { cellWidth: 26 },
+        1: { halign: "center", cellWidth: 10 },
+        2: { halign: "right", cellWidth: 16 },
+        3: { halign: "right", cellWidth: 20 },
+      },
+      head: [["Item", "Qty", "Rate", "Total"]],
+      body: completedSale.items.map((item) => {
+        const qtyText = `${item.quantity}${
+          item.unit ? " " + item.unit : ""
+        }`;
 
-    row(
-      "Date",
-      new Date(completedSale.createdAt).toLocaleString("en-IN", {
-        day: "2-digit",
-        month: "short",
-        year: "numeric",
-        hour: "2-digit",
-        minute: "2-digit",
-      })
-    );
+        return [
+          item.productName,
+          qtyText,
+          formatNumber(item.sellingPrice),
+          formatNumber(
+            item.total ??
+              item.quantity * item.sellingPrice - (item.discount || 0)
+          ),
+        ];
+      }),
+      didDrawPage: () => {},
+    });
 
-    row(
-      "Customer",
-      completedSale.customerName || "Walk-in Customer"
-    );
+    y = (doc as any).lastAutoTable.finalY + 3;
 
     line();
 
-    // =========================
-    // TABLE HEADER
-    // =========================
+    // ===============================
+    // Totals
+    // ===============================
+    const totalRow = (label: string, value: number, bold = false) => {
+      doc.setFont("courier", bold ? "bold" : "normal");
+      doc.setFontSize(8);
 
-    doc.setFillColor(240);
+      doc.text(label, margin, y);
 
-    doc.rect(margin, y - 3, pageWidth - margin * 2, 6, "F");
-
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(7.5);
-
-    doc.text("Item", margin, y + 1);
-
-    doc.text("Qty", 42, y + 1, {
-      align: "right",
-    });
-
-    doc.text("Rate", 56, y + 1, {
-      align: "right",
-    });
-
-    doc.text("Amt", 76, y + 1, {
-      align: "right",
-    });
-
-    y += 7;
-
-    // =========================
-    // ITEMS
-    // =========================
-
-    doc.setFont("helvetica", "normal");
-
-    completedSale.items.forEach((item) => {
-      const total =
-        item.total ??
-        item.quantity * item.sellingPrice -
-          (item.discount || 0);
-
-      const itemLines = doc.splitTextToSize(
-        item.productName,
-        34
-      );
-
-      doc.setFontSize(7);
-
-      doc.text(itemLines, margin, y);
+      const valueText = formatNumber(value);
 
       doc.text(
-        String(item.quantity),
-        42,
+        valueText,
+        pageWidth - margin,
         y,
         { align: "right" }
       );
 
-      doc.text(
-        `${formatNumber(item.sellingPrice)}`,
-        56,
-        y,
-        { align: "right" }
-      );
+      y += 4.5;
+    };
 
-      doc.text(
-        formatNumber(total),
-        76,
-        y,
-        { align: "right" }
-      );
+    totalRow("Subtotal", completedSale.subtotal);
 
-      y += itemLines.length * 3.5 + 2;
-
-      if (item.unit) {
-        doc.setFontSize(6);
-        doc.setTextColor(120);
-
-        doc.text(
-          `Unit: ${item.unit}`,
-          margin,
-          y - 1
-        );
-
-        doc.setTextColor(0);
-      }
-
-      if (item.discount && item.discount > 0) {
-        doc.setFontSize(6);
-
-        doc.text(
-          `Discount: ₹${formatNumber(item.discount)}`,
-          76,
-          y - 1,
-          {
-            align: "right",
-          }
-        );
-      }
-
-      y += 2;
-
-      if (y > 190) {
-        doc.addPage([80, 220], "portrait");
-        y = 10;
-      }
-    });
-
-    line();
-
-    // =========================
-    // TOTALS
-    // =========================
-
-    row(
-      "Subtotal",
-      `₹${formatNumber(completedSale.subtotal)}`
-    );
+    if (completedSale.totalGst > 0) {
+      totalRow("GST", completedSale.totalGst);
+    }
 
     if (completedSale.totalDiscount > 0) {
-      row(
-        "Discount",
-        `- ₹${formatNumber(
-          completedSale.totalDiscount
-        )}`
-      );
-    }
-
-    row(
-      "GST",
-      `₹${formatNumber(completedSale.totalGst)}`
-    );
-
-    line();
-
-    // GRAND TOTAL BOX
-
-    doc.setFillColor(20);
-
-    doc.rect(margin, y - 2, pageWidth - margin * 2, 8, "F");
-
-    doc.setTextColor(255);
-
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(10);
-
-    doc.text("GRAND TOTAL", margin + 1, y + 3);
-
-    doc.text(
-      `₹${formatNumber(completedSale.grandTotal)}`,
-      pageWidth - margin - 1,
-      y + 3,
-      {
-        align: "right",
-      }
-    );
-
-    doc.setTextColor(0);
-
-    y += 10;
-
-    // =========================
-    // PAYMENT
-    // =========================
-
-    row(
-      "Paid",
-      `₹${formatNumber(completedSale.paidAmount)}`
-    );
-
-    row(
-      "Due",
-      `₹${formatNumber(completedSale.dueAmount)}`
-    );
-
-    const change =
-      completedSale.paidAmount -
-      completedSale.grandTotal;
-
-    if (change > 0) {
-      row("Change", `₹${formatNumber(change)}`);
+      totalRow("Discount", completedSale.totalDiscount);
     }
 
     line();
 
-    // =========================
-    // FOOTER
-    // =========================
+    totalRow("Grand Total", completedSale.grandTotal, true);
 
-    y += 2;
+    line();
 
-    center("Thank You!", 9, true);
+    totalRow("Paid", completedSale.paidAmount);
 
-    center("Visit Again", 8);
+    totalRow("Due", completedSale.dueAmount, true);
 
-    y += 2;
+    line();
 
-    center(
-      "Software by SS Software",
-      6
-    );
+    // ===============================
+    // Footer
+    // ===============================
+    centerText("Thank You Visit Again", 8, "bold");
+    centerText("Software By New Mandal Cosmetic", 6);
 
-    // =========================
-    // SAVE
-    // =========================
-
+    // ===============================
+    // Save
+    // ===============================
     doc.save(
       `Invoice-${completedSale.invoiceNumber}.pdf`
     );
 
-    toast.success("Invoice downloaded", {
+    toast.success("PDF Generated Successfully", {
       id: toastId,
     });
   } catch (error) {
     console.error(error);
 
-    toast.error("Failed to generate PDF", {
+    toast.error("Failed to Generate PDF", {
       id: toastId,
     });
   }
