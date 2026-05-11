@@ -50,14 +50,12 @@ export async function generatePDF({
     // ==========================================
 
     const doc = new jsPDF({
-  orientation: "portrait",
-  unit: "pt", // use points for better precision
-  format: [226, 1200], // 80mm thermal width in points
-  compress: false,
-  precision: 32,
-  putOnlyUsedFonts: true,
-  hotfixes: ["px_scaling"],
-});
+      orientation: "portrait",
+      unit: "mm",
+      format: [80, 300],
+      compress: false,
+      precision: 32,
+    });
 
     doc.setProperties({
       title: `Invoice-${completedSale.invoiceNumber}`,
@@ -70,8 +68,8 @@ export async function generatePDF({
 
     doc.setLineWidth(0.3);
 
-    const pageWidth = 226;
-const margin = 10;
+    const pageWidth = 80;
+    const margin = 3;
 
     let y = 6;
 
