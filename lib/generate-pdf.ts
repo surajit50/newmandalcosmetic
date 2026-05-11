@@ -52,7 +52,7 @@ export async function generatePDF({
     const doc = new jsPDF({
       orientation: "portrait",
       unit: "mm",
-      format: [80, 250],
+      format: [80, 300],
       compress: false,
       precision: 16,
     });
@@ -229,7 +229,7 @@ export async function generatePDF({
     line();
 
     // ==========================================
-    // ITEMS
+    // ITEMS WITH WRAP
     // ==========================================
 
     completedSale.items.forEach((item, index) => {
@@ -241,12 +241,14 @@ export async function generatePDF({
         item.total ??
         item.sellingPrice * item.quantity - (item.discount || 0);
 
-      let itemName = item.productName;
+      // ==========================================
+      // WRAP LONG ITEM NAME
+      // ==========================================
 
-      // Shorten long names
-      if (itemName.length > 22) {
-        itemName = itemName.substring(0, 22) + "..";
-      }
+      const itemLines = doc.splitTextToSize(
+        item.productName,
+        32
+      );
 
       const qtyText = String(item.quantity);
 
@@ -254,32 +256,49 @@ export async function generatePDF({
 
       const amtText = formatNumber(itemTotal);
 
-      // Serial No
+      // ==========================================
+      // FIRST LINE
+      // ==========================================
+
       doc.text(String(index + 1), colNo, y);
 
-      // Item Name
-      doc.text(itemName, colItem, y);
+      doc.text(itemLines[0], colItem, y);
 
-      // Qty
       doc.text(qtyText, colQty, y, {
         align: "right",
       });
 
-      // Rate
       doc.text(rateText, colRate, y, {
         align: "right",
       });
 
-      // Amount
       doc.text(amtText, colAmt, y, {
         align: "right",
       });
 
-      y += 5;
+      y += 4;
 
-      // Auto page break
-      if (y > 230) {
-        doc.addPage([80, 250], "portrait");
+      // ==========================================
+      // EXTRA WRAPPED LINES
+      // ==========================================
+
+      if (itemLines.length > 1) {
+        for (let i = 1; i < itemLines.length; i++) {
+          doc.text(itemLines[i], colItem, y);
+
+          y += 4;
+        }
+      }
+
+      // Space after item
+      y += 1;
+
+      // ==========================================
+      // PAGE BREAK
+      // ==========================================
+
+      if (y > 280) {
+        doc.addPage([80, 300], "portrait");
 
         y = 10;
       }
