@@ -46,21 +46,18 @@ export async function generatePDF({
 
   try {
     // ==========================================
-    // HIGH RESOLUTION THERMAL PDF
+    // PDF SETUP
     // ==========================================
 
     const doc = new jsPDF({
-      orientation: "portrait",
-      unit: "pt",
-      format: [226, 2000], // 80mm thermal width
-      compress: false,
-      precision: 32,
-      putOnlyUsedFonts: true,
-      hotfixes: ["px_scaling"],
-    });
-
-    // Increase rendering quality
-    doc.internal.scaleFactor = 4;
+  orientation: "portrait",
+  unit: "pt", // use points for better precision
+  format: [226, 1200], // 80mm thermal width in points
+  compress: false,
+  precision: 32,
+  putOnlyUsedFonts: true,
+  hotfixes: ["px_scaling"],
+});
 
     doc.setProperties({
       title: `Invoice-${completedSale.invoiceNumber}`,
@@ -68,17 +65,15 @@ export async function generatePDF({
       author: shopSettings.shopName,
     });
 
-    // Pure black for thermal printer
     doc.setTextColor(0, 0, 0);
     doc.setDrawColor(0, 0, 0);
 
-    // Better line quality
-    doc.setLineWidth(0.8);
+    doc.setLineWidth(0.3);
 
     const pageWidth = 226;
-    const margin = 10;
+const margin = 10;
 
-    let y = 20;
+    let y = 6;
 
     // ==========================================
     // HELPERS
@@ -86,7 +81,7 @@ export async function generatePDF({
 
     const centerText = (
       text: string,
-      size = 14,
+      size = 10,
       style: "normal" | "bold" = "bold"
     ) => {
       doc.setFont("courier", style);
@@ -97,12 +92,12 @@ export async function generatePDF({
 
       doc.text(text, (pageWidth - textWidth) / 2, y);
 
-      y += size + 6;
+      y += size * 0.45 + 1.5;
     };
 
     const leftText = (
       text: string,
-      size = 11,
+      size = 8,
       style: "normal" | "bold" = "bold"
     ) => {
       doc.setFont("courier", style);
@@ -111,12 +106,12 @@ export async function generatePDF({
 
       doc.text(text, margin, y);
 
-      y += size + 5;
+      y += size * 0.45 + 1.5;
     };
 
     const rightText = (
       text: string,
-      size = 11,
+      size = 8,
       style: "normal" | "bold" = "bold"
     ) => {
       doc.setFont("courier", style);
@@ -131,7 +126,7 @@ export async function generatePDF({
     const twoColumn = (
       left: string,
       right: string,
-      size = 11,
+      size = 8,
       style: "normal" | "bold" = "bold"
     ) => {
       doc.setFont("courier", style);
@@ -144,35 +139,31 @@ export async function generatePDF({
 
       doc.text(right, pageWidth - margin - width, y);
 
-      y += size + 6;
+      y += size * 0.45 + 1.8;
     };
 
     const line = () => {
       doc.line(margin, y, pageWidth - margin, y);
 
-      y += 10;
+      y += 3;
     };
 
     // ==========================================
     // HEADER
     // ==========================================
 
-    centerText(
-      shopSettings.shopName.toUpperCase(),
-      18,
-      "bold"
-    );
+    centerText(shopSettings.shopName.toUpperCase(), 14, "bold");
 
     if (shopSettings.address) {
-      centerText(shopSettings.address, 11);
+      centerText(shopSettings.address, 8);
     }
 
     if (shopSettings.phone) {
-      centerText(`Phone: ${shopSettings.phone}`, 11);
+      centerText(`Phone: ${shopSettings.phone}`, 8);
     }
 
     if (shopSettings.gstin) {
-      centerText(`GSTIN: ${shopSettings.gstin}`, 11);
+      centerText(`GSTIN: ${shopSettings.gstin}`, 8);
     }
 
     line();
@@ -181,31 +172,26 @@ export async function generatePDF({
     // BILL DETAILS
     // ==========================================
 
-    leftText(`Bill No : ${completedSale.invoiceNumber}`, 11);
+    leftText(`Bill No : ${completedSale.invoiceNumber}`, 8);
 
     const tempY = y;
 
     rightText(
-      new Date(completedSale.createdAt).toLocaleString(
-        "en-IN",
-        {
-          day: "2-digit",
-          month: "short",
-          year: "numeric",
-          hour: "2-digit",
-          minute: "2-digit",
-        }
-      ),
-      10
+      new Date(completedSale.createdAt).toLocaleString("en-IN", {
+        day: "2-digit",
+        month: "short",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+      }),
+      7
     );
 
-    y = tempY + 10;
+    y = tempY + 4;
 
     leftText(
-      `Customer : ${
-        completedSale.customerName || "Walk-in Customer"
-      }`,
-      11
+      `Customer : ${completedSale.customerName || "Walk-in Customer"}`,
+      8
     );
 
     line();
@@ -216,13 +202,13 @@ export async function generatePDF({
 
     doc.setFont("courier", "bold");
 
-    doc.setFontSize(11);
+    doc.setFontSize(8);
 
-    const colNo = 10;
-    const colItem = 28;
-    const colQty = 140;
-    const colRate = 180;
-    const colAmt = 216;
+    const colNo = 3;
+    const colItem = 10;
+    const colQty = 46;
+    const colRate = 60;
+    const colAmt = 77;
 
     doc.text("No", colNo, y);
 
@@ -240,23 +226,22 @@ export async function generatePDF({
       align: "right",
     });
 
-    y += 10;
+    y += 4;
 
     line();
 
     // ==========================================
-    // ITEMS
+    // ITEMS WITH WRAP
     // ==========================================
 
     completedSale.items.forEach((item, index) => {
       doc.setFont("courier", "bold");
 
-      doc.setFontSize(11);
+      doc.setFontSize(8);
 
       const itemTotal =
         item.total ??
-        item.sellingPrice * item.quantity -
-          (item.discount || 0);
+        item.sellingPrice * item.quantity - (item.discount || 0);
 
       // ==========================================
       // WRAP LONG ITEM NAME
@@ -264,7 +249,7 @@ export async function generatePDF({
 
       const itemLines = doc.splitTextToSize(
         item.productName,
-        95
+        32
       );
 
       const qtyText = String(item.quantity);
@@ -293,7 +278,7 @@ export async function generatePDF({
         align: "right",
       });
 
-      y += 12;
+      y += 4;
 
       // ==========================================
       // EXTRA WRAPPED LINES
@@ -303,21 +288,21 @@ export async function generatePDF({
         for (let i = 1; i < itemLines.length; i++) {
           doc.text(itemLines[i], colItem, y);
 
-          y += 12;
+          y += 4;
         }
       }
 
-      // Gap between items
-      y += 4;
+      // Space after item
+      y += 1;
 
       // ==========================================
       // PAGE BREAK
       // ==========================================
 
-      if (y > 1900) {
-        doc.addPage([226, 2000], "portrait");
+      if (y > 280) {
+        doc.addPage([80, 300], "portrait");
 
-        y = 20;
+        y = 10;
       }
     });
 
@@ -330,22 +315,21 @@ export async function generatePDF({
     twoColumn(
       "Subtotal",
       formatNumber(completedSale.subtotal),
-      11
+      8
     );
 
     if (completedSale.totalDiscount > 0) {
       twoColumn(
         "Discount",
-        "-" +
-          formatNumber(completedSale.totalDiscount),
-        11
+        "-" + formatNumber(completedSale.totalDiscount),
+        8
       );
     }
 
     twoColumn(
       "GST",
       formatNumber(completedSale.totalGst),
-      11
+      8
     );
 
     line();
@@ -356,7 +340,7 @@ export async function generatePDF({
 
     doc.setFont("courier", "bold");
 
-    doc.setFontSize(14);
+    doc.setFontSize(10);
 
     doc.text("GRAND TOTAL", margin, y);
 
@@ -369,7 +353,7 @@ export async function generatePDF({
       }
     );
 
-    y += 18;
+    y += 6;
 
     line();
 
@@ -380,24 +364,23 @@ export async function generatePDF({
     twoColumn(
       "Paid Amount",
       formatNumber(completedSale.paidAmount),
-      11
+      8
     );
 
     twoColumn(
       "Due Amount",
       formatNumber(completedSale.dueAmount),
-      11
+      8
     );
 
     const change =
-      completedSale.paidAmount -
-      completedSale.grandTotal;
+      completedSale.paidAmount - completedSale.grandTotal;
 
     if (change > 0) {
       twoColumn(
         "Change",
         formatNumber(change),
-        11
+        8
       );
     }
 
@@ -407,23 +390,21 @@ export async function generatePDF({
     // FOOTER
     // ==========================================
 
-    y += 10;
+    y += 2;
 
-    centerText("THANK YOU", 14, "bold");
+    centerText("THANK YOU", 9, "bold");
 
-    centerText("VISIT AGAIN", 12);
+    centerText("VISIT AGAIN", 8);
 
-    y += 6;
+    y += 2;
 
-    centerText("Software by SS Software", 10);
+    centerText("Software by SS Software", 7);
 
     // ==========================================
     // SAVE PDF
     // ==========================================
 
-    doc.save(
-      `Invoice-${completedSale.invoiceNumber}.pdf`
-    );
+    doc.save(`Invoice-${completedSale.invoiceNumber}.pdf`);
 
     toast.success("Receipt Downloaded", {
       id: toastId,
