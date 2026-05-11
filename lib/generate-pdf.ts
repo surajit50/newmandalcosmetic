@@ -1,4 +1,5 @@
 // lib/generate-pdf.ts
+
 import jsPDF from "jspdf";
 import { toast } from "sonner";
 
@@ -10,7 +11,7 @@ interface GeneratePDFParams {
     items: {
       productName: string;
       quantity: number;
-      unit?: string;               // ← must be included from the product
+      unit?: string;
       sellingPrice: number;
       discount?: number;
       total?: number;
@@ -22,6 +23,7 @@ interface GeneratePDFParams {
     paidAmount: number;
     dueAmount: number;
   };
+
   shopSettings: {
     shopName: string;
     address?: string;
@@ -40,94 +42,139 @@ export async function generatePDF({
   completedSale,
   shopSettings,
 }: GeneratePDFParams) {
-  const toastId = toast.loading("Generating PDF...");
+  const toastId = toast.loading("Generating receipt...");
 
   try {
+    // ==========================================
+    // THERMAL PRINTER OPTIMIZED PDF
+    // ==========================================
     const doc = new jsPDF({
       orientation: "portrait",
       unit: "mm",
-      format: [80, 200],
+      format: [80, 220],
+      compress: false,
+      precision: 16,
     });
 
-    // =============================================
-    // IMPROVEMENTS FOR THERMAL PRINT QUALITY
-    // =============================================
-    // 1. Force pure black – no grey anti‑aliasing.
+    doc.setProperties({
+      title: `Invoice-${completedSale.invoiceNumber}`,
+      subject: "Thermal Receipt",
+      author: shopSettings.shopName,
+    });
+
     doc.setTextColor(0, 0, 0);
     doc.setDrawColor(0, 0, 0);
 
-    // 2. Help the printer driver recognise this as a receipt.
-    doc.setProperties({
-      title: `Invoice ${completedSale.invoiceNumber}`,
-      subject: "Thermal Receipt",
-    });
+    // Thick lines for thermal printer
+    doc.setLineWidth(0.4);
 
-    // 3. Open the print dialog automatically when the PDF loads.
-    //    (Works in Adobe Reader and some browsers; still let
-    //     the user click "Save" if they prefer.)
+    // Auto print
     doc.autoPrint();
-    // =============================================
 
     const pageWidth = 80;
     const margin = 3;
-    let y = 4;
 
-    // ---------- helpers ----------
-    const centerText = (text: string, size = 10, style: "normal" | "bold" = "normal") => {
+    let y = 6;
+
+    // ==========================================
+    // HELPERS
+    // ==========================================
+
+    const centerText = (
+      text: string,
+      size = 10,
+      style: "normal" | "bold" = "bold"
+    ) => {
       doc.setFont("courier", style);
       doc.setFontSize(size);
+
       const textWidth = doc.getTextWidth(text);
+
       doc.text(text, (pageWidth - textWidth) / 2, y);
-      y += size * 0.35 + 1;
+
+      y += size * 0.5 + 1;
     };
 
-    const leftText = (text: string, size = 8, style: "normal" | "bold" = "normal") => {
+    const leftText = (
+      text: string,
+      size = 9,
+      style: "normal" | "bold" = "bold"
+    ) => {
       doc.setFont("courier", style);
       doc.setFontSize(size);
+
       doc.text(text, margin, y);
-      y += size * 0.35 + 1.2;
+
+      y += size * 0.5 + 1.5;
     };
 
-    const rightText = (text: string, size = 8, style: "normal" | "bold" = "normal") => {
+    const rightText = (
+      text: string,
+      size = 9,
+      style: "normal" | "bold" = "bold"
+    ) => {
       doc.setFont("courier", style);
       doc.setFontSize(size);
+
       const textWidth = doc.getTextWidth(text);
+
       doc.text(text, pageWidth - margin - textWidth, y);
     };
 
-    const twoColumn = (left: string, right: string, size = 8, style: "normal" | "bold" = "normal") => {
+    const twoColumn = (
+      left: string,
+      right: string,
+      size = 9,
+      style: "normal" | "bold" = "bold"
+    ) => {
       doc.setFont("courier", style);
       doc.setFontSize(size);
+
       doc.text(left, margin, y);
+
       const rightWidth = doc.getTextWidth(right);
+
       doc.text(right, pageWidth - margin - rightWidth, y);
-      y += size * 0.35 + 1.4;
+
+      y += size * 0.5 + 1.5;
     };
 
-    const dashedLine = () => {
-      let x = margin;
-      while (x < pageWidth - margin) {
-        doc.line(x, y, x + 1.5, y);
-        x += 3;
-      }
-      y += 2.5;
-    };
+    const line = () => {
+      doc.setLineWidth(0.3);
 
-    const solidLine = () => {
       doc.line(margin, y, pageWidth - margin, y);
-      y += 2;
+
+      y += 3;
     };
 
-    // ---------- header ----------
-    centerText(shopSettings.shopName.toUpperCase(), 12, "bold");
-    if (shopSettings.address) centerText(shopSettings.address, 8);
-    if (shopSettings.phone) centerText(`Phone: ${shopSettings.phone}`, 8);
-    if (shopSettings.gstin) centerText(`GSTIN: ${shopSettings.gstin}`, 8);
-    dashedLine();
+    // ==========================================
+    // HEADER
+    // ==========================================
 
-    // ---------- invoice details ----------
-    leftText(`Invoice: ${completedSale.invoiceNumber}`, 8);
+    centerText(shopSettings.shopName.toUpperCase(), 14, "bold");
+
+    if (shopSettings.address) {
+      centerText(shopSettings.address, 9, "bold");
+    }
+
+    if (shopSettings.phone) {
+      centerText(`Phone: ${shopSettings.phone}`, 9, "bold");
+    }
+
+    if (shopSettings.gstin) {
+      centerText(`GSTIN: ${shopSettings.gstin}`, 9, "bold");
+    }
+
+    line();
+
+    // ==========================================
+    // INVOICE DETAILS
+    // ==========================================
+
+    leftText(`Bill No : ${completedSale.invoiceNumber}`, 9);
+
     const currentY = y;
+
     rightText(
       new Date(completedSale.createdAt).toLocaleString("en-IN", {
         day: "2-digit",
@@ -138,136 +185,180 @@ export async function generatePDF({
       }),
       8
     );
-    y = currentY + 3.5;
-    leftText(`Customer: ${completedSale.customerName || "Walk-in Customer"}`, 8);
-    dashedLine();
 
-    // ============================================
-    // DYNAMIC COLUMN WIDTHS – disc expands, item shrinks
-    // ============================================
-    const colSl = margin;               // 3 mm
-    const colItem = 7;                  // fixed start for item name
+    y = currentY + 4;
 
-    // Step 1 — measure maximum width of each column’s content
-    doc.setFont("courier", "normal");
-    doc.setFontSize(7);
-    const charWidth = doc.getTextWidth("A");
+    leftText(
+      `Customer : ${completedSale.customerName || "Walk-in Customer"}`,
+      9
+    );
 
-    let maxQtyWidth = 0;
-    let maxRateWidth = 0;
-    let maxDiscWidth = 0;
-    let maxAmtWidth = 0;
+    line();
 
-    completedSale.items.forEach((item) => {
-      const qtyStr = String(item.quantity);
-      const rateStr = `${formatNumber(item.sellingPrice)}${item.unit ? '/' + item.unit : ''}`;
-      const discStr = item.discount && item.discount > 0 ? formatNumber(item.discount) : "-";
-      const itemTotal = item.total ?? item.sellingPrice * item.quantity - (item.discount || 0);
-      const amtStr = formatNumber(itemTotal);
+    // ==========================================
+    // TABLE HEADER
+    // ==========================================
 
-      maxQtyWidth  = Math.max(maxQtyWidth,  doc.getTextWidth(qtyStr));
-      maxRateWidth = Math.max(maxRateWidth, doc.getTextWidth(rateStr));
-      maxDiscWidth = Math.max(maxDiscWidth, doc.getTextWidth(discStr));
-      maxAmtWidth  = Math.max(maxAmtWidth,  doc.getTextWidth(amtStr));
-    });
-
-    const colAmt = pageWidth - margin;   // right edge (77 mm)
-
-    // Step 2 — derive column positions from right to left
-    const padding = 1.5; // mm between columns
-
-    const amtLeft     = colAmt - maxAmtWidth;
-    const discEnd     = amtLeft - padding;
-    const discStart   = discEnd - maxDiscWidth;
-
-    const rateEnd     = discStart - padding;
-    const rateStart   = rateEnd - maxRateWidth;
-
-    const qtyEnd      = rateStart - padding;
-    const qtyStart    = qtyEnd - maxQtyWidth;
-
-    // available width for the item name column
-    const itemWidth   = qtyStart - padding - colItem;
-    const maxItemChars = Math.max(1, Math.floor(itemWidth / charWidth));
-
-    // ---------- table header ----------
     doc.setFont("courier", "bold");
-    doc.setFontSize(7);
-    doc.text("Sl.", colSl, y);
-    doc.text("Item", colItem, y);
-    doc.text("Qty", qtyStart, y);
-    doc.text("Rate", rateStart, y);
-    doc.text("Disc", discStart, y);
-    doc.text("Amt", colAmt, y, { align: "right" });
-    y += 4;
-    doc.setFont("courier", "normal");
+    doc.setFontSize(9);
 
-    // ---------- items ----------
+    const col1 = 3;
+    const col2 = 10;
+    const col3 = 42;
+    const col4 = 55;
+    const col5 = 77;
+
+    doc.text("No", col1, y);
+    doc.text("Item", col2, y);
+    doc.text("Qty", col3, y);
+    doc.text("Rate", col4, y);
+    doc.text("Amt", col5, y, { align: "right" });
+
+    y += 5;
+
+    line();
+
+    // ==========================================
+    // ITEMS
+    // ==========================================
+
+    doc.setFont("courier", "bold");
+
     completedSale.items.forEach((item, index) => {
-      doc.setFontSize(7);
+      doc.setFontSize(9);
 
-      const slNo = index + 1;
-      const itemName =
-        item.productName.length > maxItemChars
-          ? item.productName.substring(0, maxItemChars) + ".."
-          : item.productName;
       const itemTotal =
-        item.total ?? item.sellingPrice * item.quantity - (item.discount || 0);
-      const rateStr = `${formatNumber(item.sellingPrice)}${item.unit ? '/' + item.unit : ''}`;
-      const discStr = item.discount && item.discount > 0 ? formatNumber(item.discount) : "-";
+        item.total ??
+        item.sellingPrice * item.quantity - (item.discount || 0);
 
-      doc.text(String(slNo), colSl, y);
-      doc.text(itemName, colItem, y);
-      doc.text(String(item.quantity), qtyStart, y);
-      doc.text(rateStr, rateStart, y);
-      doc.text(discStr, discStart, y);
-      doc.text(formatNumber(itemTotal), colAmt, y, { align: "right" });
+      let itemName = item.productName;
 
-      y += 4;
+      // Shorten for thermal printer
+      if (itemName.length > 18) {
+        itemName = itemName.substring(0, 18) + "..";
+      }
 
-      // Page break if needed
-      if (y > 185) {
-        doc.addPage([80, 200], "portrait");
+      doc.text(String(index + 1), col1, y);
+
+      doc.text(itemName, col2, y);
+
+      doc.text(String(item.quantity), col3, y);
+
+      doc.text(formatNumber(item.sellingPrice), col4, y);
+
+      doc.text(formatNumber(itemTotal), col5, y, {
+        align: "right",
+      });
+
+      y += 5;
+
+      // Page break
+      if (y > 200) {
+        doc.addPage([80, 220], "portrait");
+
         y = 10;
       }
     });
 
-    dashedLine();
+    line();
 
-    // ---------- totals ----------
-    twoColumn("Subtotal", formatNumber(completedSale.subtotal));
-    if ((completedSale.totalDiscount || 0) > 0) {
-      twoColumn("Discount", "-" + formatNumber(completedSale.totalDiscount));
-    }
+    // ==========================================
+    // TOTALS
+    // ==========================================
+
     twoColumn(
-      "Taxable",
-      formatNumber(completedSale.subtotal - completedSale.totalDiscount)
+      "Subtotal",
+      formatNumber(completedSale.subtotal),
+      9,
+      "bold"
     );
-    twoColumn("GST", formatNumber(completedSale.totalGst));
-    solidLine();
+
+    if (completedSale.totalDiscount > 0) {
+      twoColumn(
+        "Discount",
+        "-" + formatNumber(completedSale.totalDiscount),
+        9,
+        "bold"
+      );
+    }
+
+    twoColumn("GST", formatNumber(completedSale.totalGst), 9, "bold");
+
+    line();
 
     doc.setFont("courier", "bold");
-    doc.setFontSize(8);
-    doc.text("TOTAL", margin, y);
-    doc.text(formatNumber(completedSale.grandTotal), colAmt, y, { align: "right" });
-    y += 5;
-    dashedLine();
+    doc.setFontSize(11);
 
-    // ---------- payment ----------
-    twoColumn("Paid", formatNumber(completedSale.paidAmount));
-    twoColumn("Due", formatNumber(completedSale.dueAmount));
-    const change = completedSale.paidAmount - completedSale.grandTotal;
-    if (change > 0) twoColumn("Change", formatNumber(change));
-    dashedLine();
+    doc.text("GRAND TOTAL", margin, y);
 
-    // ---------- footer ----------
-    centerText("Thank you for your purchase!", 8);
-    centerText("Visit Again", 8);
+    doc.text(
+      formatNumber(completedSale.grandTotal),
+      pageWidth - margin,
+      y,
+      {
+        align: "right",
+      }
+    );
+
+    y += 6;
+
+    line();
+
+    // ==========================================
+    // PAYMENT
+    // ==========================================
+
+    twoColumn(
+      "Paid Amount",
+      formatNumber(completedSale.paidAmount),
+      9,
+      "bold"
+    );
+
+    twoColumn(
+      "Due Amount",
+      formatNumber(completedSale.dueAmount),
+      9,
+      "bold"
+    );
+
+    const change =
+      completedSale.paidAmount - completedSale.grandTotal;
+
+    if (change > 0) {
+      twoColumn("Change", formatNumber(change), 9, "bold");
+    }
+
+    line();
+
+    // ==========================================
+    // FOOTER
+    // ==========================================
+
+    y += 2;
+
+    centerText("THANK YOU", 10, "bold");
+
+    centerText("VISIT AGAIN", 9, "bold");
+
+    y += 4;
+
+    centerText("Software by SS Software", 8, "bold");
+
+    // ==========================================
+    // SAVE PDF
+    // ==========================================
 
     doc.save(`Invoice-${completedSale.invoiceNumber}.pdf`);
-    toast.success("PDF downloaded successfully", { id: toastId });
+
+    toast.success("Receipt downloaded successfully", {
+      id: toastId,
+    });
   } catch (error) {
     console.error("PDF Error:", error);
-    toast.error("Failed to generate PDF", { id: toastId });
+
+    toast.error("Failed to generate receipt", {
+      id: toastId,
+    });
   }
 }
