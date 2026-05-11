@@ -46,18 +46,21 @@ export async function generatePDF({
 
   try {
     // ==========================================
-    // PDF SETUP
+    // HIGH RESOLUTION THERMAL PDF
     // ==========================================
 
     const doc = new jsPDF({
-  orientation: "portrait",
-  unit: "pt", // use points for better precision
-  format: [226, 1200], // 80mm thermal width in points
-  compress: false,
-  precision: 32,
-  putOnlyUsedFonts: true,
-  hotfixes: ["px_scaling"],
-});
+      orientation: "portrait",
+      unit: "pt",
+      format: [226, 2000], // 80mm thermal width
+      compress: false,
+      precision: 32,
+      putOnlyUsedFonts: true,
+      hotfixes: ["px_scaling"],
+    });
+
+    // Increase rendering quality
+    doc.internal.scaleFactor = 4;
 
     doc.setProperties({
       title: `Invoice-${completedSale.invoiceNumber}`,
@@ -65,15 +68,17 @@ export async function generatePDF({
       author: shopSettings.shopName,
     });
 
+    // Pure black for thermal printer
     doc.setTextColor(0, 0, 0);
     doc.setDrawColor(0, 0, 0);
 
-    doc.setLineWidth(0.3);
+    // Better line quality
+    doc.setLineWidth(0.8);
 
     const pageWidth = 226;
-const margin = 10;
+    const margin = 10;
 
-    let y = 6;
+    let y = 20;
 
     // ==========================================
     // HELPERS
@@ -81,7 +86,7 @@ const margin = 10;
 
     const centerText = (
       text: string,
-      size = 10,
+      size = 14,
       style: "normal" | "bold" = "bold"
     ) => {
       doc.setFont("courier", style);
@@ -92,12 +97,12 @@ const margin = 10;
 
       doc.text(text, (pageWidth - textWidth) / 2, y);
 
-      y += size * 0.45 + 1.5;
+      y += size + 6;
     };
 
     const leftText = (
       text: string,
-      size = 8,
+      size = 11,
       style: "normal" | "bold" = "bold"
     ) => {
       doc.setFont("courier", style);
@@ -106,12 +111,12 @@ const margin = 10;
 
       doc.text(text, margin, y);
 
-      y += size * 0.45 + 1.5;
+      y += size + 5;
     };
 
     const rightText = (
       text: string,
-      size = 8,
+      size = 11,
       style: "normal" | "bold" = "bold"
     ) => {
       doc.setFont("courier", style);
@@ -126,7 +131,7 @@ const margin = 10;
     const twoColumn = (
       left: string,
       right: string,
-      size = 8,
+      size = 11,
       style: "normal" | "bold" = "bold"
     ) => {
       doc.setFont("courier", style);
@@ -139,31 +144,35 @@ const margin = 10;
 
       doc.text(right, pageWidth - margin - width, y);
 
-      y += size * 0.45 + 1.8;
+      y += size + 6;
     };
 
     const line = () => {
       doc.line(margin, y, pageWidth - margin, y);
 
-      y += 3;
+      y += 10;
     };
 
     // ==========================================
     // HEADER
     // ==========================================
 
-    centerText(shopSettings.shopName.toUpperCase(), 14, "bold");
+    centerText(
+      shopSettings.shopName.toUpperCase(),
+      18,
+      "bold"
+    );
 
     if (shopSettings.address) {
-      centerText(shopSettings.address, 8);
+      centerText(shopSettings.address, 11);
     }
 
     if (shopSettings.phone) {
-      centerText(`Phone: ${shopSettings.phone}`, 8);
+      centerText(`Phone: ${shopSettings.phone}`, 11);
     }
 
     if (shopSettings.gstin) {
-      centerText(`GSTIN: ${shopSettings.gstin}`, 8);
+      centerText(`GSTIN: ${shopSettings.gstin}`, 11);
     }
 
     line();
@@ -172,26 +181,31 @@ const margin = 10;
     // BILL DETAILS
     // ==========================================
 
-    leftText(`Bill No : ${completedSale.invoiceNumber}`, 8);
+    leftText(`Bill No : ${completedSale.invoiceNumber}`, 11);
 
     const tempY = y;
 
     rightText(
-      new Date(completedSale.createdAt).toLocaleString("en-IN", {
-        day: "2-digit",
-        month: "short",
-        year: "numeric",
-        hour: "2-digit",
-        minute: "2-digit",
-      }),
-      7
+      new Date(completedSale.createdAt).toLocaleString(
+        "en-IN",
+        {
+          day: "2-digit",
+          month: "short",
+          year: "numeric",
+          hour: "2-digit",
+          minute: "2-digit",
+        }
+      ),
+      10
     );
 
-    y = tempY + 4;
+    y = tempY + 10;
 
     leftText(
-      `Customer : ${completedSale.customerName || "Walk-in Customer"}`,
-      8
+      `Customer : ${
+        completedSale.customerName || "Walk-in Customer"
+      }`,
+      11
     );
 
     line();
@@ -202,13 +216,13 @@ const margin = 10;
 
     doc.setFont("courier", "bold");
 
-    doc.setFontSize(8);
+    doc.setFontSize(11);
 
-    const colNo = 3;
-    const colItem = 10;
-    const colQty = 46;
-    const colRate = 60;
-    const colAmt = 77;
+    const colNo = 10;
+    const colItem = 28;
+    const colQty = 140;
+    const colRate = 180;
+    const colAmt = 216;
 
     doc.text("No", colNo, y);
 
@@ -226,22 +240,23 @@ const margin = 10;
       align: "right",
     });
 
-    y += 4;
+    y += 10;
 
     line();
 
     // ==========================================
-    // ITEMS WITH WRAP
+    // ITEMS
     // ==========================================
 
     completedSale.items.forEach((item, index) => {
       doc.setFont("courier", "bold");
 
-      doc.setFontSize(8);
+      doc.setFontSize(11);
 
       const itemTotal =
         item.total ??
-        item.sellingPrice * item.quantity - (item.discount || 0);
+        item.sellingPrice * item.quantity -
+          (item.discount || 0);
 
       // ==========================================
       // WRAP LONG ITEM NAME
@@ -249,7 +264,7 @@ const margin = 10;
 
       const itemLines = doc.splitTextToSize(
         item.productName,
-        32
+        95
       );
 
       const qtyText = String(item.quantity);
@@ -278,7 +293,7 @@ const margin = 10;
         align: "right",
       });
 
-      y += 4;
+      y += 12;
 
       // ==========================================
       // EXTRA WRAPPED LINES
@@ -288,21 +303,21 @@ const margin = 10;
         for (let i = 1; i < itemLines.length; i++) {
           doc.text(itemLines[i], colItem, y);
 
-          y += 4;
+          y += 12;
         }
       }
 
-      // Space after item
-      y += 1;
+      // Gap between items
+      y += 4;
 
       // ==========================================
       // PAGE BREAK
       // ==========================================
 
-      if (y > 280) {
-        doc.addPage([80, 300], "portrait");
+      if (y > 1900) {
+        doc.addPage([226, 2000], "portrait");
 
-        y = 10;
+        y = 20;
       }
     });
 
@@ -315,21 +330,22 @@ const margin = 10;
     twoColumn(
       "Subtotal",
       formatNumber(completedSale.subtotal),
-      8
+      11
     );
 
     if (completedSale.totalDiscount > 0) {
       twoColumn(
         "Discount",
-        "-" + formatNumber(completedSale.totalDiscount),
-        8
+        "-" +
+          formatNumber(completedSale.totalDiscount),
+        11
       );
     }
 
     twoColumn(
       "GST",
       formatNumber(completedSale.totalGst),
-      8
+      11
     );
 
     line();
@@ -340,7 +356,7 @@ const margin = 10;
 
     doc.setFont("courier", "bold");
 
-    doc.setFontSize(10);
+    doc.setFontSize(14);
 
     doc.text("GRAND TOTAL", margin, y);
 
@@ -353,7 +369,7 @@ const margin = 10;
       }
     );
 
-    y += 6;
+    y += 18;
 
     line();
 
@@ -364,23 +380,24 @@ const margin = 10;
     twoColumn(
       "Paid Amount",
       formatNumber(completedSale.paidAmount),
-      8
+      11
     );
 
     twoColumn(
       "Due Amount",
       formatNumber(completedSale.dueAmount),
-      8
+      11
     );
 
     const change =
-      completedSale.paidAmount - completedSale.grandTotal;
+      completedSale.paidAmount -
+      completedSale.grandTotal;
 
     if (change > 0) {
       twoColumn(
         "Change",
         formatNumber(change),
-        8
+        11
       );
     }
 
@@ -390,21 +407,23 @@ const margin = 10;
     // FOOTER
     // ==========================================
 
-    y += 2;
+    y += 10;
 
-    centerText("THANK YOU", 9, "bold");
+    centerText("THANK YOU", 14, "bold");
 
-    centerText("VISIT AGAIN", 8);
+    centerText("VISIT AGAIN", 12);
 
-    y += 2;
+    y += 6;
 
-    centerText("Software by SS Software", 7);
+    centerText("Software by SS Software", 10);
 
     // ==========================================
     // SAVE PDF
     // ==========================================
 
-    doc.save(`Invoice-${completedSale.invoiceNumber}.pdf`);
+    doc.save(
+      `Invoice-${completedSale.invoiceNumber}.pdf`
+    );
 
     toast.success("Receipt Downloaded", {
       id: toastId,
