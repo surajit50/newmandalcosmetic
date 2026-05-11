@@ -70,8 +70,8 @@ export async function generatePDF({
 
     doc.setLineWidth(0.3);
 
-    const pageWidth = 80;
-    const margin = 3;
+    const pageWidth = 226;
+const margin = 10;
 
     let y = 6;
 
