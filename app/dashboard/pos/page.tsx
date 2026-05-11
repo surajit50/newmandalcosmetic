@@ -4,7 +4,7 @@
 import { useEffect, useState, useRef, useCallback, useMemo } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { ShoppingCart, X, UserPlus, Zap } from "lucide-react";
+import { ShoppingCart, X, UserPlus, Zap, Trash2 } from "lucide-react";
 import { ThermalReceipt } from "@/components/pos/thermal-receipt";
 import { SearchBar } from "@/components/pos/search-bar";
 import { ProductGrid } from "@/components/pos/product-grid";
@@ -18,7 +18,6 @@ import { Product, CartItem, Customer, Sale, PaymentMode } from "@/lib/type";
 import { printReceipt } from "@/lib/print-receipt";
 import { generatePDF } from "@/lib/generate-pdf";
 
-// ---------- Quick Bill Preset type ----------
 interface QuickBillPreset {
   id: string;
   label: string;
@@ -36,23 +35,26 @@ export default function POSPage() {
   const [paymentMode, setPaymentMode] = useState<PaymentMode>("CASH");
   const [paidAmount, setPaidAmount] = useState("");
   const [isProcessing, setIsProcessing] = useState(false);
-  const processingRef = useRef(false); // stricter double‑click lock
+  const processingRef = useRef(false);
   const [showSuccess, setShowSuccess] = useState(false);
   const [completedSale, setCompletedSale] = useState<Sale | null>(null);
   const [showCustomerDialog, setShowCustomerDialog] = useState(false);
   const [newCustomer, setNewCustomer] = useState({ name: "", phone: "" });
   const [shopSettings, setShopSettings] = useState<any>(null);
 
-  // Mobile‑only state
+  // Mobile‑only
   const [cartOpen, setCartOpen] = useState(false);
   const [mobileCustomerOpen, setMobileCustomerOpen] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
 
-  // Quick Bill state
+  // Quick Bill
   const [quickBillOpen, setQuickBillOpen] = useState(false);
   const [selectedPreset, setSelectedPreset] = useState<QuickBillPreset | null>(null);
   const [quickBillPresets, setQuickBillPresets] = useState<QuickBillPreset[]>([]);
   const [presetsLoading, setPresetsLoading] = useState(true);
+
+  // ---- NEW: editable items for Quick Bill ----
+  const [editingItems, setEditingItems] = useState<CartItem[] | null>(null);
 
   const searchInputRef = useRef<HTMLInputElement>(null);
   const printFrameRef = useRef<HTMLIFrameElement>(null);
@@ -107,7 +109,6 @@ export default function POSPage() {
     }
   };
 
-  // Detect mobile for toast positioning
   useEffect(() => {
     const check = () => setIsMobile(window.innerWidth <= 767);
     check();
@@ -126,7 +127,6 @@ export default function POSPage() {
     return () => clearTimeout(debounce);
   }, [customerSearch, fetchCustomers]);
 
-  // Search results derived from query – no extra state
   const searchResults = useMemo(() => {
     if (searchQuery.length < 1) return [];
     const q = searchQuery.toLowerCase();
@@ -135,22 +135,19 @@ export default function POSPage() {
       .slice(0, 10);
   }, [searchQuery, products]);
 
-  // Auto‑focus search on mobile for immediate scanning
   useEffect(() => {
     if (isMobile) {
       searchInputRef.current?.focus();
     }
   }, [isMobile]);
 
-  // Refocus search when mobile customer overlay closes
   useEffect(() => {
     if (!mobileCustomerOpen && isMobile) {
-      // small delay ensures the overlay is fully removed
       setTimeout(() => searchInputRef.current?.focus(), 50);
     }
   }, [mobileCustomerOpen, isMobile]);
 
-  // ---------- Cart Operations (memoized) ----------
+  // ---------- Cart Operations ----------
   const addToCart = useCallback((product: Product) => {
     if (product.currentStock <= 0) {
       toast.error("Product is out of stock", { duration: 2000, position: isMobile ? "bottom-center" : "top-center" });
@@ -220,12 +217,10 @@ export default function POSPage() {
     );
   }, []);
 
-  // ---------- Computed Totals ----------
+  // ---------- Computed Cart Totals ----------
   const { subtotal, totalDiscount, totalGst, grandTotal, lineGstMap } = useMemo(() => {
     const map: Record<string, number> = {};
-    let sub = 0,
-      disc = 0,
-      gst = 0;
+    let sub = 0, disc = 0, gst = 0;
     cart.forEach(item => {
       const lineTotal = item.sellingPrice * item.quantity;
       const incl = lineTotal - item.discount;
@@ -236,30 +231,24 @@ export default function POSPage() {
       disc += item.discount;
       gst += lg;
     });
-    return {
-      subtotal: sub,
-      totalDiscount: disc,
-      totalGst: gst,
-      grandTotal: sub - disc,
-      lineGstMap: map,
-    };
+    return { subtotal: sub, totalDiscount: disc, totalGst: gst, grandTotal: sub - disc, lineGstMap: map };
   }, [cart]);
 
   const paidAmountNum = parseFloat(paidAmount) || 0;
   const dueAmount = grandTotal - paidAmountNum;
   const isOverpaid = paidAmountNum > grandTotal && grandTotal > 0;
 
-  // ---------- Checkout (main cart) ----------
+  // ---------- Checkout ----------
   const handleCheckout = useCallback(async () => {
     if (cart.length === 0) {
       toast.error("Cart is empty", { duration: 2000 });
       return;
     }
     if (isOverpaid) {
-      toast.error("Paid amount exceeds the total. Please adjust.", { duration: 3000 });
+      toast.error("Paid amount exceeds the total.", { duration: 3000 });
       return;
     }
-    if (processingRef.current) return; // double‑click lock
+    if (processingRef.current) return;
     processingRef.current = true;
     setIsProcessing(true);
     try {
@@ -327,13 +316,16 @@ export default function POSPage() {
     [products]
   );
 
-  const handleQuickBillCheckout = useCallback(async (preset: QuickBillPreset) => {
+  const handleQuickBillCheckout = useCallback(async () => {
+    if (!editingItems || editingItems.length === 0) {
+      toast.error("No items in the Quick Bill");
+      return;
+    }
     if (processingRef.current) return;
-    const items = resolvePresetItems(preset);
 
     // Stock validation
     const missing: string[] = [];
-    for (const item of items) {
+    for (const item of editingItems) {
       const product = products.find(p => p.id === item.productId);
       if (!product) {
         missing.push(`${item.productName} (product not found)`);
@@ -348,12 +340,9 @@ export default function POSPage() {
       return;
     }
 
-    const subtotal = items.reduce((sum, item) => sum + item.sellingPrice * item.quantity, 0);
-    const totalDiscount = items.reduce((sum, item) => sum + (item.discount || 0), 0);
-    const grandTotal = subtotal - totalDiscount;
-
+    const subtotal = editingItems.reduce((sum, item) => sum + item.sellingPrice * item.quantity, 0);
+    const grandTotal = subtotal; // no discount for quick bill items (discount can be added if needed)
     const finalPaidAmount = paidAmountNum > 0 ? paidAmountNum : grandTotal;
-    const finalPaymentMode = paymentMode;
 
     if (finalPaidAmount > grandTotal) {
       toast.error("Paid amount exceeds total", { duration: 2000 });
@@ -367,7 +356,7 @@ export default function POSPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          items: items.map(item => ({
+          items: editingItems.map(item => ({
             productId: item.productId,
             productName: item.productName,
             quantity: item.quantity,
@@ -379,20 +368,17 @@ export default function POSPage() {
           customerId: selectedCustomer?.id || null,
           customerName: selectedCustomer?.name || "Walk-in Customer",
           customerPhone: selectedCustomer?.phone || null,
-          paymentMode: finalPaymentMode,
+          paymentMode,
           paidAmount: finalPaidAmount.toString(),
         }),
       });
-
       if (res.ok) {
         const sale = await res.json();
         setCompletedSale(sale);
         setShowSuccess(true);
-        setSelectedPreset(null);
-        setQuickBillOpen(false);
-        setPaidAmount("");
+        resetQuickBill();
         fetchProducts();
-        toast.success(`Quick bill "${preset.label}" completed!`);
+        toast.success("Quick bill completed!");
       } else {
         const data = await res.json();
         toast.error(data.error || "Failed to process quick bill", { duration: 3000 });
@@ -404,7 +390,40 @@ export default function POSPage() {
       processingRef.current = false;
       setIsProcessing(false);
     }
-  }, [resolvePresetItems, products, paidAmountNum, paymentMode, selectedCustomer, fetchProducts, isMobile]);
+  }, [editingItems, products, paidAmountNum, paymentMode, selectedCustomer, fetchProducts]);
+
+  // Reset Quick Bill state
+  const resetQuickBill = () => {
+    setQuickBillOpen(false);
+    setSelectedPreset(null);
+    setEditingItems(null);
+    setPaidAmount("");
+  };
+
+  // Handlers for editing preset items
+  const updateEditingItemQuantity = (index: number, newQty: number) => {
+    if (!editingItems) return;
+    const updated = [...editingItems];
+    if (newQty <= 0) {
+      // remove item
+      updated.splice(index, 1);
+    } else {
+      const product = products.find(p => p.id === updated[index].productId);
+      if (product && newQty > product.currentStock) {
+        toast.error("Not enough stock", { duration: 2000 });
+        return;
+      }
+      updated[index] = { ...updated[index], quantity: newQty };
+    }
+    setEditingItems(updated);
+  };
+
+  const removeEditingItem = (index: number) => {
+    if (!editingItems) return;
+    const updated = [...editingItems];
+    updated.splice(index, 1);
+    setEditingItems(updated);
+  };
 
   // ---------- Print & PDF ----------
   const handlePrint = useCallback(() => {
@@ -429,7 +448,6 @@ export default function POSPage() {
       toast.error("Name and phone are required", { duration: 2000 });
       return;
     }
-    // Duplicate phone check
     try {
       const checkRes = await fetch(`/api/customers?search=${encodeURIComponent(newCustomer.phone)}`);
       if (checkRes.ok) {
@@ -441,14 +459,11 @@ export default function POSPage() {
           setNewCustomer({ name: "", phone: "" });
           setCustomerSearch("");
           setMobileCustomerOpen(false);
-          toast.success(`Customer found: ${existingCust.name} – selected automatically.`, { duration: 3000 });
+          toast.success(`Customer found: ${existingCust.name}`, { duration: 3000 });
           return;
         }
       }
-    } catch (error) {
-      // proceed anyway – network error shouldn't block creation
-    }
-
+    } catch (error) { /* proceed */ }
     try {
       const res = await fetch("/api/customers", {
         method: "POST",
@@ -472,16 +487,15 @@ export default function POSPage() {
     }
   };
 
-  // ---------- Quick Bill Modal Toggle with confirmation ----------
   const openQuickBillModal = useCallback(() => {
     if (cart.length > 0) {
       if (!window.confirm("You have items in the main cart. Opening Quick Bill will not affect them. Continue?")) return;
     }
-    setPaidAmount(""); // reset
+    setPaidAmount("");
     setQuickBillOpen(true);
   }, [cart.length]);
 
-  // ---------- Shared Cart Content ----------
+  // ---------- Shared Cart Content (unchanged) ----------
   const CartContent = () => (
     <>
       <div className="px-4 py-2 border-b border-border/50 flex items-center justify-between bg-card/50">
@@ -493,7 +507,6 @@ export default function POSPage() {
           {cart.length} ITEMS
         </Badge>
       </div>
-
       <div className="flex-1 overflow-y-auto scrollbar-hide p-2 space-y-2">
         {cart.length === 0 ? (
           <div className="h-full flex flex-col items-center justify-center text-muted-foreground gap-3 opacity-30">
@@ -513,7 +526,6 @@ export default function POSPage() {
           ))
         )}
       </div>
-
       <CheckoutPanel
         itemCount={cart.length}
         subtotal={subtotal}
@@ -532,14 +544,21 @@ export default function POSPage() {
     </>
   );
 
-  // ---------- Quick Bill Modal ----------
+  // ---------- Quick Bill Modal (UPDATED with editing) ----------
   const QuickBillModal = () => {
     if (!quickBillOpen) return null;
 
     const handlePresetSelect = (preset: QuickBillPreset) => {
       setSelectedPreset(preset);
-      setPaidAmount(""); // reset paid amount when switching preset
+      const resolved = resolvePresetItems(preset);
+      setEditingItems(resolved);
+      setPaidAmount("");
     };
+
+    // Compute totals from editingItems
+    const qbSubtotal = editingItems ? editingItems.reduce((sum, i) => sum + i.sellingPrice * i.quantity, 0) : 0;
+    const qbGrandTotal = qbSubtotal; // no discount
+    const qbItemCount = editingItems ? editingItems.length : 0;
 
     return (
       <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
@@ -549,17 +568,13 @@ export default function POSPage() {
             <Button
               variant="ghost"
               size="icon"
-              onClick={() => {
-                setQuickBillOpen(false);
-                setSelectedPreset(null);
-                setPaidAmount(""); // reset
-              }}
+              onClick={() => resetQuickBill()}
             >
               <X className="w-5 h-5" />
             </Button>
           </div>
 
-          {/* Customer info – read only */}
+          {/* Customer info */}
           <div className="mb-4 text-sm flex items-center gap-2">
             <span className="text-muted-foreground">Customer:</span>
             <span className="font-medium">{selectedCustomer?.name || "Walk-in Customer"}</span>
@@ -576,18 +591,14 @@ export default function POSPage() {
             )}
           </div>
 
-          {/* Step 1: Choose a preset */}
+          {/* Step 1: Choose preset */}
           {!selectedPreset && (
             <div className="space-y-2">
               {presetsLoading && (
-                <div className="text-center py-8 text-muted-foreground">
-                  Loading presets...
-                </div>
+                <div className="text-center py-8 text-muted-foreground">Loading presets...</div>
               )}
               {!presetsLoading && quickBillPresets.length === 0 && (
-                <div className="text-center py-8 text-muted-foreground">
-                  No quick bill presets defined yet.
-                </div>
+                <div className="text-center py-8 text-muted-foreground">No quick bill presets defined yet.</div>
               )}
               {quickBillPresets.map((preset) => (
                 <button
@@ -596,92 +607,116 @@ export default function POSPage() {
                   className="w-full text-left p-3 rounded-lg border hover:bg-muted transition-colors"
                 >
                   <div className="font-semibold">{preset.label}</div>
-                  <div className="text-xs text-muted-foreground">
-                    {preset.items.length} products
-                  </div>
+                  <div className="text-xs text-muted-foreground">{preset.items.length} products</div>
                 </button>
               ))}
             </div>
           )}
 
-          {/* Step 2: Confirm and complete */}
-          {selectedPreset && (() => {
-            const items = resolvePresetItems(selectedPreset);
-            const subtotal = items.reduce((sum, i) => sum + i.sellingPrice * i.quantity, 0);
-            const totalDiscount = items.reduce((sum, i) => sum + (i.discount || 0), 0);
-            const grandTotal = subtotal - totalDiscount;
-
-            return (
-              <div className="space-y-4">
+          {/* Step 2: Edit selected preset */}
+          {selectedPreset && editingItems !== null && (
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
                 <button
-                  onClick={() => setSelectedPreset(null)}
+                  onClick={() => {
+                    setSelectedPreset(null);
+                    setEditingItems(null);
+                  }}
                   className="text-sm text-primary hover:underline"
                 >
                   ← Back to presets
                 </button>
                 <h3 className="font-bold">{selectedPreset.label}</h3>
-
-                <div className="space-y-2 max-h-48 overflow-y-auto">
-                  {items.map((item, idx) => (
-                    <div key={idx} className="flex justify-between text-sm border-b pb-1">
-                      <span>{item.productName} × {item.quantity}</span>
-                      <span className="font-medium">₹{(item.sellingPrice * item.quantity).toFixed(2)}</span>
-                    </div>
-                  ))}
-                </div>
-
-                <div className="space-y-1 text-sm">
-                  <div className="flex justify-between">
-                    <span>Subtotal</span>
-                    <span>₹{subtotal.toFixed(2)}</span>
-                  </div>
-                  {totalDiscount > 0 && (
-                    <div className="flex justify-between text-green-600">
-                      <span>Discount</span>
-                      <span>-₹{totalDiscount.toFixed(2)}</span>
-                    </div>
-                  )}
-                  <div className="flex justify-between font-bold text-base border-t pt-2">
-                    <span>Total</span>
-                    <span>₹{grandTotal.toFixed(2)}</span>
-                  </div>
-                </div>
-
-                <div className="space-y-2">
-                  <select
-                    value={paymentMode}
-                    onChange={(e) => setPaymentMode(e.target.value as PaymentMode)}
-                    className="w-full rounded-lg border px-3 py-2 text-sm"
-                  >
-                    <option value="CASH">Cash</option>
-                    <option value="CARD">Card</option>
-                    <option value="UPI">UPI</option>
-                  </select>
-                  <input
-                    type="number"
-                    placeholder={`Paid amount (default ₹${grandTotal.toFixed(2)})`}
-                    value={paidAmount}
-                    onChange={(e) => setPaidAmount(e.target.value)}
-                    className="w-full rounded-lg border px-3 py-2 text-sm"
-                  />
-                </div>
-
-                <Button
-                  className="w-full"
-                  disabled={isProcessing}
-                  onClick={() => handleQuickBillCheckout(selectedPreset)}
-                >
-                  {isProcessing ? "Processing..." : `Complete Sale – ₹${grandTotal.toFixed(2)}`}
-                </Button>
               </div>
-            );
-          })()}
+
+              <div className="space-y-2 max-h-48 overflow-y-auto">
+                {editingItems.length === 0 ? (
+                  <p className="text-center text-muted-foreground py-8">No items. Add from presets or go back.</p>
+                ) : (
+                  editingItems.map((item, idx) => (
+                    <div key={idx} className="flex items-center gap-2 text-sm border-b pb-1">
+                      <div className="flex-1">{item.productName}</div>
+                      <div className="flex items-center">
+                        <button
+                          className="px-2 py-1 border rounded-l bg-muted hover:bg-muted-foreground/20"
+                          onClick={() => updateEditingItemQuantity(idx, item.quantity - 1)}
+                        >
+                          −
+                        </button>
+                        <input
+                          type="number"
+                          min={0}
+                          value={item.quantity}
+                          onChange={(e) => {
+                            const val = parseInt(e.target.value);
+                            if (!isNaN(val)) updateEditingItemQuantity(idx, val);
+                          }}
+                          className="w-14 text-center border-t border-b py-1"
+                        />
+                        <button
+                          className="px-2 py-1 border rounded-r bg-muted hover:bg-muted-foreground/20"
+                          onClick={() => updateEditingItemQuantity(idx, item.quantity + 1)}
+                        >
+                          +
+                        </button>
+                      </div>
+                      <div className="w-20 text-right font-medium">
+                        ₹{(item.sellingPrice * item.quantity).toFixed(2)}
+                      </div>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                        onClick={() => removeEditingItem(idx)}
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </Button>
+                    </div>
+                  ))
+                )}
+              </div>
+
+              <div className="space-y-1 text-sm">
+                <div className="flex justify-between font-bold text-base border-t pt-2">
+                  <span>Total</span>
+                  <span>₹{qbGrandTotal.toFixed(2)}</span>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <select
+                  value={paymentMode}
+                  onChange={(e) => setPaymentMode(e.target.value as PaymentMode)}
+                  className="w-full rounded-lg border px-3 py-2 text-sm"
+                >
+                  <option value="CASH">Cash</option>
+                  <option value="CARD">Card</option>
+                  <option value="UPI">UPI</option>
+                </select>
+                <input
+                  type="number"
+                  placeholder={`Paid amount (default ₹${qbGrandTotal.toFixed(2)})`}
+                  value={paidAmount}
+                  onChange={(e) => setPaidAmount(e.target.value)}
+                  className="w-full rounded-lg border px-3 py-2 text-sm"
+                />
+              </div>
+
+              <Button
+                className="w-full"
+                disabled={isProcessing || qbItemCount === 0}
+                onClick={handleQuickBillCheckout}
+              >
+                {isProcessing ? "Processing..." : `Complete Sale – ₹${qbGrandTotal.toFixed(2)}`}
+              </Button>
+            </div>
+          )}
         </div>
       </div>
     );
   };
 
-  // ---------- Mobile Customer Overlay ----------
+  // ---------- Mobile Customer Overlay (unchanged) ----------
   const MobileCustomerOverlay = () => (
     <div className="fixed inset-0 z-50 bg-background flex flex-col md:hidden">
       <div className="flex items-center justify-between p-4 border-b">
@@ -694,7 +729,6 @@ export default function POSPage() {
           <X className="w-5 h-5" />
         </Button>
       </div>
-
       <div className="p-4 flex-1 overflow-y-auto">
         <input
           type="text"
@@ -704,7 +738,6 @@ export default function POSPage() {
           className="w-full rounded-lg border px-4 py-3 mb-4 min-h-[44px]"
           autoFocus
         />
-
         <div className="space-y-2">
           {customers.map(cust => (
             <button
@@ -725,7 +758,6 @@ export default function POSPage() {
             <p className="text-center text-muted-foreground py-4">No customers found</p>
           )}
         </div>
-
         <Button
           variant="outline"
           className="w-full mt-4 min-h-[44px]"
@@ -741,10 +773,9 @@ export default function POSPage() {
     </div>
   );
 
-  // ---------- Render ----------
+  // ---------- Render (unchanged header, product area, etc.) ----------
   return (
     <div className="h-screen flex flex-col overflow-hidden bg-background">
-      {/* Header */}
       <div className="px-4 py-2 border-b border-border bg-card/50 backdrop-blur-xl sticky top-0 z-20 flex items-center justify-between shadow-sm">
         <div className="flex items-center gap-2">
           <div className="w-8 h-8 rounded-lg bg-primary/20 flex items-center justify-center border border-primary/20">
@@ -759,7 +790,6 @@ export default function POSPage() {
         </div>
 
         <div className="flex items-center gap-2">
-          {/* Desktop Customer Selector + info */}
           <div className="hidden md:flex items-center gap-2">
             <CustomerSelector
               selected={selectedCustomer}
@@ -774,7 +804,6 @@ export default function POSPage() {
               onClear={() => setSelectedCustomer(null)}
               onNewCustomer={() => setShowCustomerDialog(true)}
             />
-            {/* Extra display when a customer is selected (shows phone & clear) */}
             {selectedCustomer && (
               <div className="flex items-center gap-1 text-sm px-1">
                 <span className="text-muted-foreground">{selectedCustomer.phone}</span>
@@ -789,7 +818,6 @@ export default function POSPage() {
             )}
           </div>
 
-          {/* Quick Bill Button */}
           <Button
             variant="secondary"
             size="sm"
@@ -800,7 +828,6 @@ export default function POSPage() {
             <span className="hidden sm:inline">Quick Bill</span>
           </Button>
 
-          {/* Mobile customer button */}
           <div className="md:hidden">
             <Button
               variant="outline"
@@ -814,7 +841,6 @@ export default function POSPage() {
       </div>
 
       <div className="flex-1 flex flex-col md:flex-row overflow-hidden">
-        {/* Product Area */}
         <div className="flex-1 flex flex-col p-3 sm:p-4 overflow-hidden border-r border-border/50">
           <SearchBar
             ref={searchInputRef}
@@ -827,14 +853,11 @@ export default function POSPage() {
             <ProductGrid products={products} onAdd={addToCart} />
           </div>
         </div>
-
-        {/* Desktop Cart Panel */}
         <div className="hidden md:flex md:w-[350px] lg:w-[400px] flex-col bg-card/30 backdrop-blur-2xl border-t md:border-t-0 md:border-l border-border/50 relative shadow-2xl h-full shrink-0">
           <CartContent />
         </div>
       </div>
 
-      {/* Mobile Summary Bar */}
       <div
         className="md:hidden fixed bottom-0 left-0 right-0 bg-background border-t z-30 p-3 flex items-center justify-between cursor-pointer min-h-[56px]"
         onClick={() => {
@@ -848,7 +871,6 @@ export default function POSPage() {
         <ShoppingCart className="w-5 h-5 text-primary" />
       </div>
 
-      {/* Mobile Cart Overlay */}
       {cartOpen && (
         <div className="fixed inset-0 z-50 bg-background flex flex-col md:hidden">
           <div className="flex items-center justify-between p-4 border-b">
@@ -861,10 +883,7 @@ export default function POSPage() {
         </div>
       )}
 
-      {/* Mobile Customer Overlay */}
       {mobileCustomerOpen && <MobileCustomerOverlay />}
-
-      {/* Quick Bill Modal */}
       {quickBillOpen && <QuickBillModal />}
 
       <SuccessDialog
@@ -886,7 +905,6 @@ export default function POSPage() {
         onSave={handleNewCustomer}
       />
 
-      {/* Hidden iframe for printing */}
       <iframe ref={printFrameRef} className="hidden" title="Print Frame" />
     </div>
   );
