@@ -460,14 +460,7 @@ export default function ReportsPage() {
                         </TableCell>
                         <TableCell className="text-right">
                           <div className="flex justify-end gap-1">
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              onClick={() => handlePrint(sale)}
-                              title="Reprint Invoice"
-                            >
-                              <Printer className="w-4 h-4" />
-                            </Button>
+                            
                             <Button
                               variant="ghost"
                               size="icon"
