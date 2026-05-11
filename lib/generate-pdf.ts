@@ -396,7 +396,7 @@ export async function generatePDF({
 
     y += 2;
 
-    centerText("Software by SS Software", 7);
+    centerText("Design by SS Software", 7);
 
     // ==========================================
     // SAVE PDF
