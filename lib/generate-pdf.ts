@@ -42,16 +42,17 @@ export async function generatePDF({
   completedSale,
   shopSettings,
 }: GeneratePDFParams) {
-  const toastId = toast.loading("Generating receipt...");
+  const toastId = toast.loading("Generating Receipt...");
 
   try {
     // ==========================================
-    // THERMAL PRINTER OPTIMIZED PDF
+    // PDF SETUP
     // ==========================================
+
     const doc = new jsPDF({
       orientation: "portrait",
       unit: "mm",
-      format: [80, 220],
+      format: [80, 250],
       compress: false,
       precision: 16,
     });
@@ -65,11 +66,7 @@ export async function generatePDF({
     doc.setTextColor(0, 0, 0);
     doc.setDrawColor(0, 0, 0);
 
-    // Thick lines for thermal printer
-    doc.setLineWidth(0.4);
-
-    // Auto print
-    doc.autoPrint();
+    doc.setLineWidth(0.3);
 
     const pageWidth = 80;
     const margin = 3;
@@ -86,62 +83,64 @@ export async function generatePDF({
       style: "normal" | "bold" = "bold"
     ) => {
       doc.setFont("courier", style);
+
       doc.setFontSize(size);
 
       const textWidth = doc.getTextWidth(text);
 
       doc.text(text, (pageWidth - textWidth) / 2, y);
 
-      y += size * 0.5 + 1;
+      y += size * 0.45 + 1.5;
     };
 
     const leftText = (
       text: string,
-      size = 9,
+      size = 8,
       style: "normal" | "bold" = "bold"
     ) => {
       doc.setFont("courier", style);
+
       doc.setFontSize(size);
 
       doc.text(text, margin, y);
 
-      y += size * 0.5 + 1.5;
+      y += size * 0.45 + 1.5;
     };
 
     const rightText = (
       text: string,
-      size = 9,
+      size = 8,
       style: "normal" | "bold" = "bold"
     ) => {
       doc.setFont("courier", style);
+
       doc.setFontSize(size);
 
-      const textWidth = doc.getTextWidth(text);
+      const width = doc.getTextWidth(text);
 
-      doc.text(text, pageWidth - margin - textWidth, y);
+      doc.text(text, pageWidth - margin - width, y);
     };
 
     const twoColumn = (
       left: string,
       right: string,
-      size = 9,
+      size = 8,
       style: "normal" | "bold" = "bold"
     ) => {
       doc.setFont("courier", style);
+
       doc.setFontSize(size);
 
       doc.text(left, margin, y);
 
-      const rightWidth = doc.getTextWidth(right);
+      const width = doc.getTextWidth(right);
 
-      doc.text(right, pageWidth - margin - rightWidth, y);
+      doc.text(right, pageWidth - margin - width, y);
 
-      y += size * 0.5 + 1.5;
+      y += size * 0.45 + 1.8;
     };
 
     const line = () => {
-      doc.setLineWidth(0.3);
-
       doc.line(margin, y, pageWidth - margin, y);
 
       y += 3;
@@ -154,26 +153,26 @@ export async function generatePDF({
     centerText(shopSettings.shopName.toUpperCase(), 14, "bold");
 
     if (shopSettings.address) {
-      centerText(shopSettings.address, 9, "bold");
+      centerText(shopSettings.address, 8);
     }
 
     if (shopSettings.phone) {
-      centerText(`Phone: ${shopSettings.phone}`, 9, "bold");
+      centerText(`Phone: ${shopSettings.phone}`, 8);
     }
 
     if (shopSettings.gstin) {
-      centerText(`GSTIN: ${shopSettings.gstin}`, 9, "bold");
+      centerText(`GSTIN: ${shopSettings.gstin}`, 8);
     }
 
     line();
 
     // ==========================================
-    // INVOICE DETAILS
+    // BILL DETAILS
     // ==========================================
 
-    leftText(`Bill No : ${completedSale.invoiceNumber}`, 9);
+    leftText(`Bill No : ${completedSale.invoiceNumber}`, 8);
 
-    const currentY = y;
+    const tempY = y;
 
     rightText(
       new Date(completedSale.createdAt).toLocaleString("en-IN", {
@@ -183,14 +182,14 @@ export async function generatePDF({
         hour: "2-digit",
         minute: "2-digit",
       }),
-      8
+      7
     );
 
-    y = currentY + 4;
+    y = tempY + 4;
 
     leftText(
       `Customer : ${completedSale.customerName || "Walk-in Customer"}`,
-      9
+      8
     );
 
     line();
@@ -200,21 +199,32 @@ export async function generatePDF({
     // ==========================================
 
     doc.setFont("courier", "bold");
-    doc.setFontSize(9);
 
-    const col1 = 3;
-    const col2 = 10;
-    const col3 = 42;
-    const col4 = 55;
-    const col5 = 77;
+    doc.setFontSize(8);
 
-    doc.text("No", col1, y);
-    doc.text("Item", col2, y);
-    doc.text("Qty", col3, y);
-    doc.text("Rate", col4, y);
-    doc.text("Amt", col5, y, { align: "right" });
+    const colNo = 3;
+    const colItem = 10;
+    const colQty = 46;
+    const colRate = 60;
+    const colAmt = 77;
 
-    y += 5;
+    doc.text("No", colNo, y);
+
+    doc.text("Item", colItem, y);
+
+    doc.text("Qty", colQty, y, {
+      align: "right",
+    });
+
+    doc.text("Rate", colRate, y, {
+      align: "right",
+    });
+
+    doc.text("Amt", colAmt, y, {
+      align: "right",
+    });
+
+    y += 4;
 
     line();
 
@@ -222,10 +232,10 @@ export async function generatePDF({
     // ITEMS
     // ==========================================
 
-    doc.setFont("courier", "bold");
-
     completedSale.items.forEach((item, index) => {
-      doc.setFontSize(9);
+      doc.setFont("courier", "bold");
+
+      doc.setFontSize(8);
 
       const itemTotal =
         item.total ??
@@ -233,28 +243,43 @@ export async function generatePDF({
 
       let itemName = item.productName;
 
-      // Shorten for thermal printer
-      if (itemName.length > 18) {
-        itemName = itemName.substring(0, 18) + "..";
+      // Shorten long names
+      if (itemName.length > 22) {
+        itemName = itemName.substring(0, 22) + "..";
       }
 
-      doc.text(String(index + 1), col1, y);
+      const qtyText = String(item.quantity);
 
-      doc.text(itemName, col2, y);
+      const rateText = formatNumber(item.sellingPrice);
 
-      doc.text(String(item.quantity), col3, y);
+      const amtText = formatNumber(itemTotal);
 
-      doc.text(formatNumber(item.sellingPrice), col4, y);
+      // Serial No
+      doc.text(String(index + 1), colNo, y);
 
-      doc.text(formatNumber(itemTotal), col5, y, {
+      // Item Name
+      doc.text(itemName, colItem, y);
+
+      // Qty
+      doc.text(qtyText, colQty, y, {
+        align: "right",
+      });
+
+      // Rate
+      doc.text(rateText, colRate, y, {
+        align: "right",
+      });
+
+      // Amount
+      doc.text(amtText, colAmt, y, {
         align: "right",
       });
 
       y += 5;
 
-      // Page break
-      if (y > 200) {
-        doc.addPage([80, 220], "portrait");
+      // Auto page break
+      if (y > 230) {
+        doc.addPage([80, 250], "portrait");
 
         y = 10;
       }
@@ -269,25 +294,32 @@ export async function generatePDF({
     twoColumn(
       "Subtotal",
       formatNumber(completedSale.subtotal),
-      9,
-      "bold"
+      8
     );
 
     if (completedSale.totalDiscount > 0) {
       twoColumn(
         "Discount",
         "-" + formatNumber(completedSale.totalDiscount),
-        9,
-        "bold"
+        8
       );
     }
 
-    twoColumn("GST", formatNumber(completedSale.totalGst), 9, "bold");
+    twoColumn(
+      "GST",
+      formatNumber(completedSale.totalGst),
+      8
+    );
 
     line();
 
+    // ==========================================
+    // GRAND TOTAL
+    // ==========================================
+
     doc.setFont("courier", "bold");
-    doc.setFontSize(11);
+
+    doc.setFontSize(10);
 
     doc.text("GRAND TOTAL", margin, y);
 
@@ -305,28 +337,30 @@ export async function generatePDF({
     line();
 
     // ==========================================
-    // PAYMENT
+    // PAYMENT DETAILS
     // ==========================================
 
     twoColumn(
       "Paid Amount",
       formatNumber(completedSale.paidAmount),
-      9,
-      "bold"
+      8
     );
 
     twoColumn(
       "Due Amount",
       formatNumber(completedSale.dueAmount),
-      9,
-      "bold"
+      8
     );
 
     const change =
       completedSale.paidAmount - completedSale.grandTotal;
 
     if (change > 0) {
-      twoColumn("Change", formatNumber(change), 9, "bold");
+      twoColumn(
+        "Change",
+        formatNumber(change),
+        8
+      );
     }
 
     line();
@@ -337,13 +371,13 @@ export async function generatePDF({
 
     y += 2;
 
-    centerText("THANK YOU", 10, "bold");
+    centerText("THANK YOU", 9, "bold");
 
-    centerText("VISIT AGAIN", 9, "bold");
+    centerText("VISIT AGAIN", 8);
 
-    y += 4;
+    y += 2;
 
-    centerText("Software by SS Software", 8, "bold");
+    centerText("Software by SS Software", 7);
 
     // ==========================================
     // SAVE PDF
@@ -351,11 +385,11 @@ export async function generatePDF({
 
     doc.save(`Invoice-${completedSale.invoiceNumber}.pdf`);
 
-    toast.success("Receipt downloaded successfully", {
+    toast.success("Receipt Downloaded", {
       id: toastId,
     });
   } catch (error) {
-    console.error("PDF Error:", error);
+    console.error(error);
 
     toast.error("Failed to generate receipt", {
       id: toastId,
