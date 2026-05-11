@@ -32,6 +32,23 @@ import {
   Zap
 } from "lucide-react";
 
+// ------------------------------------------------------------------
+// Role-based access configuration
+// ------------------------------------------------------------------
+// Each role (string, matching your backend enum) maps to an array of allowed
+// navigation group titles. You can later extend this to also filter individual
+// items inside a group.
+const roleGroupAccess: Record<string, string[]> = {
+  ADMIN: ["Overview", "Inventory", "Finance", "People", "Analytics", "System"],
+  MANAGER: ["Overview", "Inventory", "People", "Analytics"],
+  CASHIER: ["Overview"],
+  STAFF: ["Overview", "Inventory"],
+};
+
+// Optionally, you can refine access to specific items inside a group.
+// For simplicity, we use the group-level filter above.
+// ------------------------------------------------------------------
+
 const navigation = [
   {
     title: "Overview",
@@ -48,7 +65,6 @@ const navigation = [
       { name: "Brands", href: "/dashboard/brands", icon: Tags },
       { name: "Inventory", href: "/dashboard/inventory", icon: Boxes },
       { name: "Low Stock", href: "/dashboard/low-stock", icon: AlertCircle },
-      // ADD THIS LINE
       { name: "Quick Bill Presets", href: "/dashboard/admin/quick-bills", icon: Zap },
     ],
   },
@@ -91,6 +107,17 @@ export function AppSidebar({
   const pathname = usePathname();
   const { data: session } = useSession();
 
+  // ---------------------------------------------------------------
+  // Filter navigation based on user role
+  // ---------------------------------------------------------------
+  const userRole = session?.user?.role ?? ""; // e.g., "ADMIN", "MANAGER", etc.
+  const allowedGroups = roleGroupAccess[userRole] ?? []; // fallback: empty (no menu) if role unknown
+
+  const filteredNavigation = navigation.filter((group) =>
+    allowedGroups.includes(group.title)
+  );
+  // ---------------------------------------------------------------
+
   return (
     <aside
       className={cn(
@@ -126,7 +153,7 @@ export function AppSidebar({
       {/* Navigation */}
       <nav className="flex-1 overflow-y-auto py-6 px-4 scrollbar-hide">
         <div className="space-y-6">
-          {navigation.map((group) => (
+          {filteredNavigation.map((group) => (
             <div key={group.title} className="space-y-2">
               <h3 className="px-3 text-[10px] font-semibold text-muted-foreground uppercase tracking-widest">
                 {group.title}
