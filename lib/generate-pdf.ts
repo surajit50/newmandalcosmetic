@@ -49,6 +49,25 @@ export async function generatePDF({
       format: [80, 200],
     });
 
+    // =============================================
+    // IMPROVEMENTS FOR THERMAL PRINT QUALITY
+    // =============================================
+    // 1. Force pure black – no grey anti‑aliasing.
+    doc.setTextColor(0, 0, 0);
+    doc.setDrawColor(0, 0, 0);
+
+    // 2. Help the printer driver recognise this as a receipt.
+    doc.setProperties({
+      title: `Invoice ${completedSale.invoiceNumber}`,
+      subject: "Thermal Receipt",
+    });
+
+    // 3. Open the print dialog automatically when the PDF loads.
+    //    (Works in Adobe Reader and some browsers; still let
+    //     the user click "Save" if they prefer.)
+    doc.autoPrint();
+    // =============================================
+
     const pageWidth = 80;
     const margin = 3;
     let y = 4;
