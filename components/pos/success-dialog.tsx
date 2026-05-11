@@ -42,10 +42,6 @@ export function SuccessDialog({
               <Button variant="outline" className="flex-1" onClick={onClose}>
                 New Sale
               </Button>
-              <Button className="flex-1" onClick={onPrint}>
-                <Printer className="w-4 h-4 mr-2" />
-                Print
-              </Button>
             </div>
             <Button
               variant="secondary"
